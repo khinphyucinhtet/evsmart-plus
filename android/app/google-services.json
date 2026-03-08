@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "1016507832438",
+    "firebase_url": "https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "evsmart-2694c",
+    "storage_bucket": "evsmart-2694c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1016507832438:android:66023a26b0427f86e26757",
+        "android_client_info": {
+          "package_name": "com.evsmart.plus.evsmart_plus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAoCv0-a-2ifdpDo1vXhJ4rV0hqcMN60IA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1016507832438:android:7c17c02afa7a10a8e26757",
+        "android_client_info": {
+          "package_name": "com.example.evsmart"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAoCv0-a-2ifdpDo1vXhJ4rV0hqcMN60IA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
