@@ -1,6 +1,7 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/material.dart';
+
+import '../services/app_repository.dart';
 import 'register_success.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -11,87 +12,79 @@ class RegisterPage extends StatefulWidget {
 }
 
 class _RegisterPageState extends State<RegisterPage> {
-
   final TextEditingController fullNameController = TextEditingController();
   final TextEditingController idController = TextEditingController();
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController = TextEditingController();
+  final TextEditingController confirmPasswordController =
+      TextEditingController();
 
   final FirebaseAuth mAuth = FirebaseAuth.instance;
 
-  final DatabaseReference dbRef = FirebaseDatabase.instanceFor(
-    app: FirebaseAuth.instance.app,
-    databaseURL:
-    "https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app",
-  ).ref("Users");
-
-  String selectedRole = "Select User Type";
+  String selectedRole = 'Select User Type';
   bool isLoading = false;
 
-  final List<String> roles = [
-    "Select User Type",
-    "EV Driver",
-    "Admin",
-    "Mechanic"
+  final List<String> roles = const [
+    'Select User Type',
+    'EV Driver',
+    'Ambulance User',
   ];
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: const Color(0xFF2E7D32),
-        title: const Text("Create Account"),
+        title: const Text(
+          'Create Account',
+          style: TextStyle(color: Colors.white),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
-
               const SizedBox(height: 10),
-
-              buildLabel("Full Name"),
-              buildField(fullNameController, "Eg: Pinky"),
-
-              buildLabel("ID Number"),
-              buildField(idController, "Eg: 1234567890"),
-
-              buildLabel("Phone Number"),
-              buildField(phoneController, "Eg: 0123456789",
-                  inputType: TextInputType.phone),
-
-              buildLabel("Email Address"),
-              buildField(emailController, "Eg: pinky@gmail.com",
-                  inputType: TextInputType.emailAddress),
-
-              buildLabel("Username"),
-              buildField(usernameController, "Eg: pinky00"),
-
-              buildLabel("Password"),
-              buildField(passwordController, "Enter password",
-                  obscure: true),
-
-              buildLabel("Confirm Password"),
-              buildField(confirmPasswordController, "Re-enter password",
-                  obscure: true),
-
+              buildLabel('Full Name'),
+              buildField(fullNameController, 'Eg: Pinky'),
+              buildLabel('ID Number'),
+              buildField(idController, 'Eg: 1234567890'),
+              buildLabel('Phone Number'),
+              buildField(
+                phoneController,
+                'Eg: 0123456789',
+                inputType: TextInputType.phone,
+              ),
+              buildLabel('Email Address'),
+              buildField(
+                emailController,
+                'Eg: pinky@gmail.com',
+                inputType: TextInputType.emailAddress,
+              ),
+              buildLabel('Username'),
+              buildField(usernameController, 'Eg: pinky00'),
+              buildLabel('Password'),
+              buildField(passwordController, 'Enter password', obscure: true),
+              buildLabel('Confirm Password'),
+              buildField(
+                confirmPasswordController,
+                'Re-enter password',
+                obscure: true,
+              ),
               const SizedBox(height: 10),
-
-              buildLabel("Select Your User Type"),
-
+              buildLabel('Select Your User Type'),
               DropdownButtonFormField<String>(
-                value: selectedRole,
-                items: roles.map((role) {
-                  return DropdownMenuItem(
-                    value: role,
-                    child: Text(role),
-                  );
-                }).toList(),
+                initialValue: selectedRole,
+                items: roles
+                    .map(
+                      (role) =>
+                          DropdownMenuItem(value: role, child: Text(role)),
+                    )
+                    .toList(),
                 onChanged: (value) {
                   setState(() {
                     selectedRole = value!;
@@ -100,8 +93,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 decoration: InputDecoration(
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
-                    borderSide:
-                    const BorderSide(color: Colors.grey),
+                    borderSide: const BorderSide(color: Colors.grey),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
@@ -112,31 +104,23 @@ class _RegisterPageState extends State<RegisterPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 25),
-
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                    const Color(0xFF2E7D32),
+                    backgroundColor: const Color(0xFF2E7D32),
                   ),
-                  onPressed:
-                  isLoading ? null : registerUser,
+                  onPressed: isLoading ? null : registerUser,
                   child: isLoading
-                      ? const CircularProgressIndicator(
-                      color: Colors.white)
+                      ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
-                    "Create Account",
-                    style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.white),
-                  ),
+                          'Create Account',
+                          style: TextStyle(fontSize: 18, color: Colors.white),
+                        ),
                 ),
               ),
-
               const SizedBox(height: 40),
             ],
           ),
@@ -145,30 +129,25 @@ class _RegisterPageState extends State<RegisterPage> {
     );
   }
 
-  // ================= LABEL =================
   Widget buildLabel(String text) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Padding(
-        padding:
-        const EdgeInsets.only(bottom: 6, top: 15),
+        padding: const EdgeInsets.only(bottom: 6, top: 15),
         child: Text(
           text,
-          style: const TextStyle(
-            fontSize: 18,
-            color: Colors.black,
-          ),
+          style: const TextStyle(fontSize: 18, color: Colors.black),
         ),
       ),
     );
   }
 
-  // ================= TEXT FIELD =================
-  Widget buildField(TextEditingController controller,
-      String hint,
-      {bool obscure = false,
-        TextInputType inputType = TextInputType.text}) {
-
+  Widget buildField(
+    TextEditingController controller,
+    String hint, {
+    bool obscure = false,
+    TextInputType inputType = TextInputType.text,
+  }) {
     return SizedBox(
       height: 50,
       child: TextField(
@@ -178,110 +157,103 @@ class _RegisterPageState extends State<RegisterPage> {
         style: const TextStyle(color: Colors.black),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle:
-          const TextStyle(color: Colors.grey),
-
+          hintStyle: const TextStyle(color: Colors.grey),
           enabledBorder: OutlineInputBorder(
-            borderRadius:
-            BorderRadius.circular(6),
-            borderSide:
-            const BorderSide(color: Colors.grey),
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Colors.grey),
           ),
-
           focusedBorder: OutlineInputBorder(
-            borderRadius:
-            BorderRadius.circular(6),
-            borderSide: const BorderSide(
-              color: Color(0xFF2E7D32),
-              width: 2,
-            ),
+            borderRadius: BorderRadius.circular(6),
+            borderSide: const BorderSide(color: Color(0xFF2E7D32), width: 2),
           ),
         ),
       ),
     );
   }
 
-  // ================= REGISTER =================
-  void registerUser() async {
+  Future<void> registerUser() async {
+    final fullName = fullNameController.text.trim();
+    final idNumber = idController.text.trim();
+    final phone = phoneController.text.trim();
+    final email = emailController.text.trim();
+    final username = usernameController.text.trim();
+    final password = passwordController.text;
+    final confirmPassword = confirmPasswordController.text;
 
-    String fullName = fullNameController.text.trim();
-    String idNumber = idController.text.trim();
-    String phone = phoneController.text.trim();
-    String email = emailController.text.trim();
-    String username = usernameController.text.trim();
-    String password = passwordController.text;
-    String confirmPassword = confirmPasswordController.text;
-
-    if (fullName.isEmpty ||
-        idNumber.isEmpty ||
-        phone.isEmpty ||
-        email.isEmpty ||
-        username.isEmpty ||
-        password.isEmpty ||
-        confirmPassword.isEmpty) {
-
-      showMessage("Please fill all fields");
+    if ([
+      fullName,
+      idNumber,
+      phone,
+      email,
+      username,
+      password,
+      confirmPassword,
+    ].any((value) => value.isEmpty)) {
+      showMessage('Please fill all fields');
       return;
     }
-
     if (password.length < 6) {
-      showMessage(
-          "Password must be at least 6 characters");
+      showMessage('Password must be at least 6 characters');
       return;
     }
-
     if (password != confirmPassword) {
-      showMessage("Passwords do not match");
+      showMessage('Passwords do not match');
       return;
     }
-
-    if (selectedRole == "Select User Type") {
-      showMessage("Please select user type");
+    if (selectedRole == 'Select User Type') {
+      showMessage('Please select user type');
       return;
     }
 
     setState(() => isLoading = true);
 
     try {
+      final userCredential = await mAuth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = userCredential.user!.uid;
 
-      UserCredential userCredential =
-      await mAuth.createUserWithEmailAndPassword(
-          email: email,
-          password: password);
-
-      String uid = userCredential.user!.uid;
-
-      await dbRef.child(uid).set({
-        "uid": uid,
-        "fullName": fullName,
-        "idNumber": idNumber,
-        "phone": phone,
-        "email": email,
-        "username": username,
-        "role": selectedRole,
+      await AppRepository.upsertUserProfile(uid, {
+        'uid': uid,
+        'fullName': fullName,
+        'idNumber': idNumber,
+        'phone': phone,
+        'email': email,
+        'username': username,
+        'role': selectedRole,
+        'vehicle_id': uid,
       });
 
-      if (!mounted) return;
+      await AppRepository.upsertVehicle(uid, {
+        'vehicle_id': uid,
+        'user_id': uid,
+        'brand': '',
+        'model': '',
+        'plate': '',
+        'vin': '',
+      });
+
+      if (!mounted) {
+        return;
+      }
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (context) =>
-          const RegisterSuccessPage(),
-        ),
+        MaterialPageRoute(builder: (_) => const RegisterSuccessPage()),
       );
-
     } catch (e) {
-      showMessage("Register failed: $e");
+      showMessage('Register failed: $e');
     }
 
-    setState(() => isLoading = false);
+    if (mounted) {
+      setState(() => isLoading = false);
+    }
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 }

@@ -13,7 +13,6 @@ class LanguagePage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
               // ================= TITLE =================
               const Center(
                 child: Text(
@@ -32,11 +31,11 @@ class LanguagePage extends StatelessWidget {
               // ================= CONTENT =================
               const Text(
                 "Currently, EVSmart supports English language only.\n\n"
-                    "Additional languages such will be added in future updates.\n\n"
-                    "Thank you for your understanding.",
+                "Additional languages such will be added in future updates.\n\n"
+                "Thank you for your understanding.",
                 style: TextStyle(
                   fontSize: 19, // matches 19sp
-                  height: 1.6,   // similar to lineSpacingExtra
+                  height: 1.6, // similar to lineSpacingExtra
                   color: Colors.black,
                 ),
               ),

@@ -13,7 +13,6 @@ class SupportPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
               // ================= TITLE =================
               const Center(
                 child: Text(
@@ -48,8 +47,8 @@ class SupportPage extends StatelessWidget {
 
               const Text(
                 "Email: support@evsmart.com\n"
-                    "Phone: +60 12-3456789\n"
-                    "Working Hours: Monday to Friday, 9:00 AM – 6:00 PM",
+                "Phone: +60 12-3456789\n"
+                "Working Hours: Monday to Friday, 9:00 AM – 6:00 PM",
                 style: TextStyle(
                   fontSize: 15,
                   color: Colors.black,
@@ -66,11 +65,11 @@ class SupportPage extends StatelessWidget {
 
               const Text(
                 "• Login and authentication problems\n"
-                    "• Profile and account updates\n"
-                    "• Charging station connection issues\n"
-                    "• Payment and transaction errors\n"
-                    "• Application crashes or slow performance\n"
-                    "• Map and station location inaccuracies",
+                "• Profile and account updates\n"
+                "• Charging station connection issues\n"
+                "• Payment and transaction errors\n"
+                "• Application crashes or slow performance\n"
+                "• Map and station location inaccuracies",
                 style: TextStyle(
                   fontSize: 15,
                   color: Colors.black,
@@ -133,10 +132,7 @@ class SupportPage extends StatelessWidget {
                 child: Text(
                   "EVSmart Support Team\nCommitted to providing reliable and efficient service.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.black,
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.black),
                 ),
               ),
             ],

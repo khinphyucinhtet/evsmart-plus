@@ -7,6 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_repository.dart';
+import '../services/impact_detection_service.dart';
 import 'alert.dart';
 import 'app_header.dart';
 import 'global_search.dart';
@@ -32,16 +33,21 @@ class _ChargePageState extends State<ChargePage> {
   List<Map<String, dynamic>> filteredStations = [];
   bool showSuggestions = false;
   Map<String, dynamic>? selectedStation;
+  late final ImpactDetectionService _impactService;
+  bool _isImpactDialogVisible = false;
 
   @override
   void initState() {
     super.initState();
     AppRepository.ensureChargingStations();
+    _impactService = ImpactDetectionService(onImpact: _handleImpactDetected);
+    _impactService.start();
     _requestLocation();
   }
 
   @override
   void dispose() {
+    _impactService.stop();
     positionStream?.cancel();
     searchController.dispose();
     super.dispose();
@@ -77,6 +83,215 @@ class _ChargePageState extends State<ChargePage> {
         userLocation = newLocation;
       });
     });
+  }
+
+  void _handleImpactDetected(ImpactEvent event) {
+    if (!mounted || _isImpactDialogVisible) {
+      return;
+    }
+
+    _showEmergencyCountdown(
+      title: 'Potential accident detected. Cancel if safe.',
+      subtitle:
+          '${AppRepository.severityLabel(event.level)} detected from the phone accelerometer. ${event.description}',
+      impactLevel: event.level,
+      source: 'accelerometer',
+      autoDispatch: event.level >= 4,
+      accelerationMagnitude: event.magnitude,
+      detectedAt: event.detectedAt,
+    );
+  }
+
+  Future<void> _createAlert({
+    required int impactLevel,
+    required String source,
+    required bool emergencyTriggered,
+    double? accelerationMagnitude,
+    DateTime? detectedAt,
+  }) async {
+    final latitude = userLocation?.latitude ?? defaultCenter.latitude;
+    final longitude = userLocation?.longitude ?? defaultCenter.longitude;
+
+    final alert = await AppRepository.sendAutomaticAlert(
+      impactLevel: impactLevel,
+      vehicleStatus: _vehicleStatusForLevel(impactLevel),
+      latitude: latitude,
+      longitude: longitude,
+      emergencyTriggered: emergencyTriggered,
+      sourceDetail: source,
+      title: 'Potential accident detected',
+      accidentStatus: emergencyTriggered
+          ? 'Emergency dispatch initiated'
+          : 'Impact logged for monitoring',
+      accelerationMagnitude: accelerationMagnitude,
+      timestamp: detectedAt,
+      extraData: {
+        'gps_location':
+            '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
+        'impact_detected_by': 'Phone accelerometer IoT simulation',
+      },
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    _showHelpOnTheWay(
+      emergencyTriggered,
+      alert['impact_label']?.toString() ??
+          AppRepository.severityLabel(impactLevel),
+    );
+  }
+
+  Future<void> _showEmergencyCountdown({
+    required String title,
+    required String subtitle,
+    required int impactLevel,
+    required String source,
+    required bool autoDispatch,
+    double? accelerationMagnitude,
+    DateTime? detectedAt,
+  }) async {
+    if (_isImpactDialogVisible) {
+      return;
+    }
+
+    _isImpactDialogVisible = true;
+    int seconds = 5;
+    bool cancelled = false;
+    Timer? timer;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            timer ??= Timer.periodic(const Duration(seconds: 1), (value) async {
+              if (seconds == 0) {
+                value.cancel();
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop();
+                }
+                await _createAlert(
+                  impactLevel: impactLevel,
+                  source: source,
+                  emergencyTriggered: autoDispatch,
+                  accelerationMagnitude: accelerationMagnitude,
+                  detectedAt: detectedAt,
+                );
+                return;
+              }
+
+              seconds -= 1;
+              if (context.mounted) {
+                setState(() {});
+              }
+            });
+
+            return AlertDialog(
+              title: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(subtitle),
+                  const SizedBox(height: 16),
+                  Text(
+                    autoDispatch
+                        ? 'Emergency services will be notified in $seconds seconds.'
+                        : 'This alert will be saved in $seconds seconds.',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(
+                    value: seconds / 5,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor:
+                        const AlwaysStoppedAnimation(Color(0xFF2E7D32)),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'This simulates vehicle IoT impact sensors using the phone accelerometer.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    cancelled = true;
+                    timer?.cancel();
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFF2E7D32),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    timer?.cancel();
+    _isImpactDialogVisible = false;
+    if (cancelled && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Emergency flow cancelled by driver')),
+      );
+    }
+  }
+
+  void _showHelpOnTheWay(bool emergencyTriggered, String severityLabel) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(emergencyTriggered ? 'Help is on the way' : 'Alert logged'),
+        content: Text(
+          emergencyTriggered
+              ? '$severityLabel was sent to Firebase, the hospital emergency dashboard, the notification page, and insurance analytics.'
+              : '$severityLabel was stored in Firebase and added to the alert history and notification page.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Color(0xFF2E7D32),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _vehicleStatusForLevel(int level) {
+    switch (level) {
+      case 1:
+        return 'Small bump detected. Driver should inspect vehicle body and bumper alignment.';
+      case 2:
+        return 'Minor collision suspected. Brake, tire, and sensor checks recommended.';
+      case 3:
+        return 'Moderate accident detected. Vehicle diagnostics and technician support required.';
+      case 4:
+        return 'Severe accident suspected. Emergency support and ambulance dispatch initiated.';
+      case 5:
+        return 'Critical crash pattern detected. Immediate emergency response required.';
+      default:
+        return 'Vehicle status unavailable.';
+    }
   }
 
   void searchStations(String query, List<Map<String, dynamic>> stations) {

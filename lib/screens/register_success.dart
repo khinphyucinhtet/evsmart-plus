@@ -6,7 +6,6 @@ class RegisterSuccessPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
@@ -18,16 +17,15 @@ class RegisterSuccessPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withValues(alpha: 0.1),
                 blurRadius: 10,
                 spreadRadius: 2,
-              )
+              ),
             ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-
               const Text(
                 "Success!",
                 style: TextStyle(
@@ -42,10 +40,7 @@ class RegisterSuccessPage extends StatelessWidget {
               const Text(
                 "Your account has been created successfully",
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 14, color: Colors.grey),
               ),
 
               const SizedBox(height: 20),
@@ -63,26 +58,20 @@ class RegisterSuccessPage extends StatelessWidget {
                 height: 45,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor:
-                    const Color(0xFF1EC9A8),
+                    backgroundColor: const Color(0xFF1EC9A8),
                   ),
                   onPressed: () {
-
                     Navigator.pushAndRemoveUntil(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                        const LoginPage(),
+                        builder: (context) => const LoginPage(),
                       ),
-                          (route) => false,
+                      (route) => false,
                     );
                   },
                   child: const Text(
                     "OK",
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white,
-                    ),
+                    style: TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
               ),

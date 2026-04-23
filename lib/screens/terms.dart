@@ -13,7 +13,6 @@ class TermsPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
               // ================= TITLE =================
               const Center(
                 child: Text(
@@ -134,10 +133,7 @@ class TermsPage extends StatelessWidget {
               const Center(
                 child: Text(
                   "Last Updated: February 2026",
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.black,
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.black),
                 ),
               ),
             ],

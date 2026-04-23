@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -19,58 +20,250 @@ class AlertPage extends StatefulWidget {
 
 class _AlertPageState extends State<AlertPage> {
   static const Color _primaryGreen = Color(0xFF2E7D32);
-  static const Color _softGreen = Color(0xFFE8F5E9);
   static const Color _surface = Color(0xFFF3F4F6);
-
-  late final ImpactDetectionService _impactDetectionService;
 
   int selectedTab = 2;
   String _statusMessage = 'Monitoring active';
-  DateTime? _selectedHistoryDate;
   bool _showingImpactDialog = false;
+  bool _accidentDetectionEnabled = true;
+  late final ImpactDetectionService _impactService;
 
   @override
   void initState() {
     super.initState();
-    // This page now subscribes to the accelerometer-based monitoring service
-    // so sensor-triggered impacts immediately restore the missing alert popup.
-    _impactDetectionService = ImpactDetectionService(
-      onImpact: _handleDetectedImpact,
-    );
-    _impactDetectionService.start();
+    _impactService = ImpactDetectionService(onImpact: _handleImpactDetected);
+    if (_accidentDetectionEnabled) {
+      _impactService.start();
+    }
   }
 
   @override
   void dispose() {
-    _impactDetectionService.stop();
+    _impactService.stop();
     super.dispose();
   }
 
-  Future<void> _handleDetectedImpact(ImpactEvent event) async {
+  void _handleImpactDetected(ImpactEvent event) {
+    if (!mounted || _showingImpactDialog || !_accidentDetectionEnabled) {
+      return;
+    }
+
+    setState(() {
+      _statusMessage =
+          'Impact detected (${event.magnitude.toStringAsFixed(1)} m/s^2)';
+    });
+
+    _showEmergencyCountdown(
+      title: 'Potential accident detected. Cancel if safe.',
+      subtitle:
+          '${AppRepository.severityLabel(event.level)} detected from the phone accelerometer. ${event.description}',
+      impactLevel: event.level,
+      source: 'accelerometer',
+      manualTrigger: false,
+      autoDispatch: event.level >= 4,
+      accelerationMagnitude: event.magnitude,
+      detectedAt: event.detectedAt,
+    );
+  }
+
+  Future<void> _createCountdownAlert({
+    required int impactLevel,
+    required String source,
+    required bool manualTrigger,
+    required bool emergencyTriggered,
+    double? accelerationMagnitude,
+    DateTime? detectedAt,
+  }) async {
+    final position = await _resolvePosition();
+    final latitude = position?.latitude ?? 3.1390;
+    final longitude = position?.longitude ?? 101.6869;
+
+    final alert = manualTrigger
+        ? await AppRepository.sendManualAlert(
+            impactLevel: impactLevel,
+            vehicleStatus: _vehicleConditionForLevel(impactLevel),
+            latitude: latitude,
+            longitude: longitude,
+            emergencyTriggered: emergencyTriggered,
+            sourceDetail: source,
+            title: 'Manual alert triggered',
+            accidentStatus: _emergencyStatusForLevel(impactLevel),
+            accelerationMagnitude: accelerationMagnitude,
+            timestamp: detectedAt,
+            extraData: {
+              'gps_location':
+                  '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
+              'impact_detected_by': 'Alert control panel',
+              'severity_label': _severityTitle(impactLevel),
+            },
+          )
+        : await AppRepository.sendAutomaticAlert(
+            impactLevel: impactLevel,
+            vehicleStatus: _vehicleConditionForLevel(impactLevel),
+            latitude: latitude,
+            longitude: longitude,
+            emergencyTriggered: emergencyTriggered,
+            sourceDetail: source,
+            title: 'Potential accident detected',
+            accidentStatus: _emergencyStatusForLevel(impactLevel),
+            accelerationMagnitude: accelerationMagnitude,
+            timestamp: detectedAt,
+            extraData: {
+              'gps_location':
+                  '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
+              'impact_detected_by': 'Phone accelerometer IoT simulation',
+              'severity_label': _severityTitle(impactLevel),
+            },
+          );
+
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _statusMessage = 'Impact detected. Preparing incident response.';
+      _statusMessage = emergencyTriggered
+          ? 'Emergency dispatch sent'
+          : 'Impact logged successfully';
     });
 
-    await _triggerAlert(
-      event.level,
-      source: 'automatic_impact_detection',
-      title: 'Automatic impact detected',
-      accelerationMagnitude: event.magnitude,
-      detectedAt: event.detectedAt,
-      vehicleStatusOverride:
-          '${_vehicleConditionForLevel(event.level)} ${event.description}',
+    _showImpactSyncResult(
+      emergencyTriggered,
+      alert['impact_label']?.toString() ?? _severityTitle(impactLevel),
     );
   }
 
-  Future<void> _triggerManualAlert(int level) async {
-    await _triggerAlert(
-      level,
-      source: 'manual_alert_page',
-      title: level == 5 ? 'SOS emergency triggered' : 'Manual alert triggered',
+  Future<void> _showEmergencyCountdown({
+    required String title,
+    required String subtitle,
+    required int impactLevel,
+    required String source,
+    required bool manualTrigger,
+    required bool autoDispatch,
+    double? accelerationMagnitude,
+    DateTime? detectedAt,
+  }) async {
+    if (_showingImpactDialog) {
+      return;
+    }
+
+    _showingImpactDialog = true;
+    int seconds = 10;
+    bool cancelled = false;
+    Timer? timer;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            timer ??= Timer.periodic(const Duration(seconds: 1), (value) async {
+              if (seconds == 0) {
+                value.cancel();
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop();
+                }
+                await _createCountdownAlert(
+                  impactLevel: impactLevel,
+                  source: source,
+                  manualTrigger: manualTrigger,
+                  emergencyTriggered: autoDispatch,
+                  accelerationMagnitude: accelerationMagnitude,
+                  detectedAt: detectedAt,
+                );
+                return;
+              }
+
+              seconds -= 1;
+              if (context.mounted) {
+                setState(() {});
+              }
+            });
+
+            return AlertDialog(
+              title: Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(subtitle),
+                  const SizedBox(height: 16),
+                  Text(
+                    autoDispatch
+                        ? 'Emergency services will be notified in $seconds seconds.'
+                        : 'This alert will be saved in $seconds seconds.',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(
+                    value: seconds / 10,
+                    backgroundColor: Colors.grey.shade300,
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFF2E7D32)),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'This simulates vehicle IoT impact sensors using the phone accelerometer.',
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    cancelled = true;
+                    timer?.cancel();
+                    Navigator.of(dialogContext).pop();
+                  },
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(
+                      color: Color(0xFF2E7D32),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    timer?.cancel();
+    _showingImpactDialog = false;
+    if (cancelled && mounted) {
+      setState(() {
+        _statusMessage = 'Monitoring active';
+      });
+    }
+  }
+
+  void _showImpactSyncResult(bool emergencyTriggered, String severityLabel) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(emergencyTriggered ? 'Help is on the way' : 'Alert logged'),
+        content: Text(
+          emergencyTriggered
+              ? '$severityLabel was sent to Firebase and synced to the ambulance dashboard, notification page, and insurance analytics.'
+              : '$severityLabel was stored in Firebase and added to the alert history, insurance feed, and notification page.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Color(0xFF2E7D32),
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -81,6 +274,8 @@ class _AlertPageState extends State<AlertPage> {
     double? accelerationMagnitude,
     DateTime? detectedAt,
     String? vehicleStatusOverride,
+    Map<String, dynamic>? extraData,
+    bool showPostAlertDialog = true,
   }) async {
     final position = await _resolvePosition();
     final latitude = position?.latitude ?? 3.1390;
@@ -93,22 +288,22 @@ class _AlertPageState extends State<AlertPage> {
         vehicleStatusOverride ?? _vehicleConditionForLevel(level);
     final timestamp = detectedAt ?? DateTime.now();
 
-    await AppRepository.createAlert(
+    await AppRepository.sendManualAlert(
       impactLevel: level,
       vehicleStatus: vehicleCondition,
       latitude: latitude,
       longitude: longitude,
       emergencyTriggered: level >= 4,
-      source: source,
+      sourceDetail: source,
       title: title,
       accidentStatus: emergencyStatus,
       accelerationMagnitude: accelerationMagnitude,
+      timestamp: timestamp,
       extraData: {
-        'severity': _severityTitle(level),
         'vehicle_condition': vehicleCondition,
         'location': locationLabel,
-        'status': emergencyStatus,
-        'timestamp': timestamp.toIso8601String(),
+        'severity_label': _severityTitle(level),
+        ...?extraData,
       },
     );
 
@@ -120,13 +315,30 @@ class _AlertPageState extends State<AlertPage> {
       _statusMessage = _statusMessageForLevel(level);
     });
 
-    await showImpactAlert(
-      level,
-      locationLabel: locationLabel,
-      emergencyStatus: emergencyStatus,
-      vehicleCondition: vehicleCondition,
-      detectedAt: timestamp,
-    );
+    if (showPostAlertDialog) {
+      await showImpactAlert(
+        level,
+        locationLabel: locationLabel,
+        emergencyStatus: emergencyStatus,
+        vehicleCondition: vehicleCondition,
+        detectedAt: timestamp,
+      );
+    }
+  }
+
+  void _toggleAccidentDetection(bool enabled) {
+    setState(() {
+      _accidentDetectionEnabled = enabled;
+      _statusMessage = enabled
+          ? 'Accident detection armed and monitoring'
+          : 'Accident detection paused';
+    });
+
+    if (enabled) {
+      _impactService.start();
+    } else {
+      _impactService.stop();
+    }
   }
 
   Future<Position?> _resolvePosition() async {
@@ -141,31 +353,6 @@ class _AlertPageState extends State<AlertPage> {
     }
   }
 
-  Future<void> _cancelLatestAlert(List<Map<String, dynamic>> alerts) async {
-    if (alerts.isEmpty) {
-      return;
-    }
-    final latest = alerts.first;
-    final alertId = latest['alert_id']?.toString();
-    if (alertId == null || alertId.isEmpty) {
-      return;
-    }
-
-    await AppRepository.updateAlert(alertId, {
-      'status': 'Cancelled by driver',
-      'emergency_triggered': false,
-      'vehicle_status': 'Driver cancelled active emergency response',
-      'vehicle_condition': 'Driver confirmed situation is stable',
-    });
-
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _statusMessage = 'Latest emergency flow cancelled';
-    });
-  }
-
   // Shared popup flow for automatic impact detection and manual emergency
   // controls. This restores the missing showDialog behavior for impact events.
   Future<void> showImpactAlert(
@@ -175,175 +362,169 @@ class _AlertPageState extends State<AlertPage> {
     required String vehicleCondition,
     required DateTime detectedAt,
   }) async {
-    if (!mounted || _showingImpactDialog) {
-      return;
-    }
+    if (!mounted || _showingImpactDialog) return;
 
     _showingImpactDialog = true;
-    final dispatchFuture = Future<void>.delayed(const Duration(seconds: 2));
+
+    int countdown = 10;
+    Timer? timer;
 
     try {
-      await showDialog<void>(
+      await showDialog(
         context: context,
         barrierDismissible: false,
         builder: (dialogContext) {
-          return Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(22),
-              child: FutureBuilder<void>(
-                future: dispatchFuture,
-                builder: (context, snapshot) {
-                  final dispatching =
-                      snapshot.connectionState != ConnectionState.done;
-                  return Column(
+          return StatefulBuilder(
+            builder: (context, dialogSetState) {
+              timer ??= Timer.periodic(const Duration(seconds: 1), (t) {
+                if (countdown <= 1) {
+                  t.cancel();
+                  Navigator.of(dialogContext).pop();
+                  return;
+                }
+
+                dialogSetState(() {
+                  countdown--;
+                });
+              });
+
+              return Dialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(22),
+                  child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: _severityColor(level).withValues(alpha: 0.12),
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: Icon(
-                              Icons.warning_amber_rounded,
-                              color: _severityColor(level),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _severityTitle(level),
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ],
+                      /// Title
+                      const Text(
+                        'Potential accident detected\nConfirm if you are safe.',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          height: 1.3,
+                        ),
                       ),
-                      const SizedBox(height: 18),
+
+                      const SizedBox(height: 14),
+
+                      /// Level description
+                      Text(
+                        _severityTitle(level),
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: _severityColor(level),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+
+                      const SizedBox(height: 10),
+
                       Text(
                         _popupMessage(level),
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          height: 1.4,
-                        ),
+                        style: const TextStyle(fontSize: 14, height: 1.4),
                       ),
+
+                      const SizedBox(height: 20),
+
+                      /// Countdown text
+                      Text(
+                        'This alert will be saved in $countdown seconds.',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+
+                      const SizedBox(height: 10),
+
+                      /// Progress bar
+                      LinearProgressIndicator(
+                        value: (10 - countdown) / 10,
+                        color: _primaryGreen,
+                        backgroundColor: Colors.grey.shade300,
+                      ),
+
                       const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: _surface,
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildDialogLine('Vehicle Condition', vehicleCondition),
-                            _buildDialogLine('Emergency Status', emergencyStatus),
-                            _buildDialogLine('Location', locationLabel),
-                            _buildDialogLine(
-                              'Time',
-                              _formatTime(detectedAt.toIso8601String()),
-                            ),
-                          ],
-                        ),
+
+                      const Text(
+                        'This simulates vehicle IoT impact sensors using the phone accelerometer.',
+                        style: TextStyle(fontSize: 13, color: Colors.grey),
                       ),
-                      const SizedBox(height: 18),
+
+                      const SizedBox(height: 30),
+
+                      /// Cancel button
                       Row(
                         children: [
-                          if (dispatching) ...[
-                            const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(strokeWidth: 2.2),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                level >= 4
-                                    ? 'Dispatching emergency response...'
-                                    : 'Syncing incident log and driver monitoring...',
-                                style: TextStyle(color: Colors.grey.shade700),
+                          /// I'M OK
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                timer?.cancel();
+                                Navigator.of(dialogContext).pop();
+
+                                setState(() {
+                                  _statusMessage = "Driver confirmed safe";
+                                });
+                              },
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _primaryGreen,
+                                side: const BorderSide(color: _primaryGreen),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: const Text(
+                                "I'm OK",
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
-                          ] else ...[
-                            Icon(
-                              Icons.check_circle_rounded,
-                              color: _severityColor(level),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Alert popup confirmed and incident saved to Firebase.',
-                                style: TextStyle(color: Colors.grey.shade700),
+                          ),
+
+                          const SizedBox(width: 12),
+
+                          /// SEND HELP
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                timer?.cancel();
+                                Navigator.of(dialogContext).pop();
+
+                                _showHelpComingDialog();
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                              ),
+                              child: const Text(
+                                "Send Help",
+                                style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
-                          ],
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => Navigator.of(dialogContext).pop(),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
-                            ),
-                          ),
-                          child: Text(
-                            level >= 4
-                                ? 'Close Alert'
-                                : 'Continue Monitoring',
-                          ),
-                        ),
-                      ),
                     ],
-                  );
-                },
-              ),
-            ),
+                  ),
+                ),
+              );
+            },
           );
         },
       );
     } finally {
+      timer?.cancel();
       _showingImpactDialog = false;
     }
-  }
-
-  Widget _buildDialogLine(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(color: Colors.black87, height: 1.35),
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            TextSpan(
-              text: value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   String _severityTitle(int level) {
@@ -429,579 +610,507 @@ class _AlertPageState extends State<AlertPage> {
     return 'Emergency monitoring and hospital response activated';
   }
 
-  String _alertTypeForLevel(int level) {
-    if (level >= 4) {
-      return 'Emergency Incident';
-    }
-    if (level == 3) {
-      return 'Impact Investigation';
-    }
-    return 'Monitoring Alert';
-  }
-
-  String _formatTime(Object? value) {
-    final raw = value?.toString();
-    final date = raw == null ? null : DateTime.tryParse(raw)?.toLocal();
-    if (date == null) {
-      return '-';
-    }
-    final hour =
-        date.hour == 0 ? 12 : (date.hour > 12 ? date.hour - 12 : date.hour);
-    final minute = date.minute.toString().padLeft(2, '0');
-    final suffix = date.hour >= 12 ? 'PM' : 'AM';
-    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} $hour:$minute $suffix';
-  }
-
-  String _formatDateLabel(DateTime value) {
-    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
-  }
-
-  List<Map<String, dynamic>> _historyForDisplay(List<Map<String, dynamic>> alerts) {
-    final now = DateTime.now();
-    final lastSevenDaysStart = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).subtract(const Duration(days: 6));
-
-    return alerts.where((alert) {
-      final timestamp =
-          AppRepository.parseTimestamp(alert['timestamp']).toLocal();
-      if (_selectedHistoryDate != null) {
-        return _isSameDate(timestamp, _selectedHistoryDate!);
-      }
-      return !timestamp.isBefore(lastSevenDaysStart);
-    }).take(7).toList();
-  }
-
-  bool _isSameDate(DateTime left, DateTime right) {
-    return left.year == right.year &&
-        left.month == right.month &&
-        left.day == right.day;
-  }
-
-  String _locationText(Map<String, dynamic>? alert) {
-    if (alert == null) {
-      return '-';
-    }
-
-    final explicit = alert['location']?.toString();
-    if (explicit != null && explicit.isNotEmpty) {
-      return explicit;
-    }
-
-    final locationName =
-        alert['location_name']?.toString() ?? 'Unknown location';
-    final roadName = alert['road_name']?.toString();
-    final latitude = (alert['latitude'] as num?)?.toDouble();
-    final longitude = (alert['longitude'] as num?)?.toDouble();
-    final roadPart = roadName == null || roadName.isEmpty ? '' : ' - $roadName';
-    final coordinatePart = latitude == null || longitude == null
-        ? ''
-        : ' (${latitude.toStringAsFixed(4)}, ${longitude.toStringAsFixed(4)})';
-    return '$locationName$roadPart$coordinatePart';
-  }
-
-  Future<void> _pickHistoryDate() async {
-    final now = DateTime.now();
-    final selected = await showDatePicker(
-      context: context,
-      initialDate: _selectedHistoryDate ?? now,
-      firstDate: DateTime(now.year - 2),
-      lastDate: now,
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: _primaryGreen,
-              onPrimary: Colors.white,
+  Future<void> _handleControlPanelPress(int level) async {
+    if (!_accidentDetectionEnabled) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Arm accident detection to use the alert control hub.',
             ),
           ),
-          child: child ?? const SizedBox.shrink(),
         );
-      },
-    );
-
-    if (selected == null || !mounted) {
+      }
       return;
     }
 
-    setState(() {
-      _selectedHistoryDate = selected;
-    });
+    if (level <= 3) {
+      await _showGuidedReportDialog(level);
+      return;
+    }
+
+    await _showEmergencyControlCountdown(level);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final bottomSystem = MediaQuery.of(context).padding.bottom;
-
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: AppRepository.streamAlerts(),
-      builder: (context, snapshot) {
-        final alerts = snapshot.data ?? const <Map<String, dynamic>>[];
-        final latest = alerts.isNotEmpty ? alerts.first : null;
-        final latestLevel = (latest?['impact_level'] as num?)?.toInt() ?? 0;
-        final history = _historyForDisplay(alerts);
-
-        return Scaffold(
-          backgroundColor: _surface,
-          body: SafeArea(
-            bottom: false,
-            child: Column(
-              children: [
-                AppHeader(
-                  onSearch: (key) {
-                    GlobalSearchHandler.handleSearch(context, key);
-                  },
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildTopOverview(latestLevel),
-                        const SizedBox(height: 18),
-                        _buildImpactClassificationCard(),
-                        const SizedBox(height: 18),
-                        _buildCurrentAlertCard(latest),
-                        const SizedBox(height: 18),
-                        _buildManualControlCard(alerts),
-                        const SizedBox(height: 18),
-                        _buildHistorySection(history),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          bottomNavigationBar: buildBottomNav(bottomSystem),
-        );
+  Future<void> _sendManualEmergencyAlert(int level) async {
+    await _triggerAlert(
+      level,
+      source: 'manual_emergency_level_$level',
+      title: level == 5
+          ? 'Level 5 SOS emergency requested'
+          : 'Level 4 emergency assistance requested',
+      accelerationMagnitude: _manualImpactMagnitudeForLevel(level),
+      detectedAt: DateTime.now(),
+      extraData: {
+        'incident_category': 'emergency_case',
+        'dashboard_rank': 'emergency',
+        'response_priority': level == 5 ? 'critical' : 'high',
+        'driver_response_summary': level == 5
+            ? 'SOS pressed by driver. Immediate ambulance response requested.'
+            : 'Level 4 assistance requested by driver. Ambulance review needed.',
+        'responder_note': level == 5
+            ? 'Treat as the highest-priority case in ambulance and insurance feeds.'
+            : 'Display near the top of the ambulance emergency queue for fast review.',
       },
+      showPostAlertDialog: false,
     );
   }
 
-  Widget _buildTopOverview(int latestLevel) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1B5E20), Color(0xFF43A047)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: const [
-          BoxShadow(
-            color: Colors.black12,
-            blurRadius: 18,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.16),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(Icons.security_rounded, color: Colors.white),
+  Future<void> _showEmergencyControlCountdown(int level) async {
+    int seconds = 5;
+    bool shouldSend = false;
+    bool cancelled = false;
+    Timer? timer;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            timer ??= Timer.periodic(const Duration(seconds: 1), (value) {
+              if (seconds == 0) {
+                shouldSend = true;
+                value.cancel();
+                if (Navigator.of(dialogContext).canPop()) {
+                  Navigator.of(dialogContext).pop();
+                }
+                return;
+              }
+
+              seconds -= 1;
+              if (context.mounted) {
+                dialogSetState(() {});
+              }
+            });
+
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
               ),
-              const SizedBox(width: 12),
-              const Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
+                    Container(
+                      width: 66,
+                      height: 66,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        level == 5
+                            ? Icons.sos_rounded
+                            : Icons.warning_amber_rounded,
+                        color: Colors.red.shade700,
+                        size: 36,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     Text(
-                      'EV Impact & Emergency Monitoring',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
+                      level == 5 ? 'Level 5 SOS' : 'Level 4 Emergency',
+                      style: const TextStyle(
+                        fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 10),
                     Text(
-                      'Automatic impact detection, SOS response, and Firebase incident logging.',
-                      style: TextStyle(color: Colors.white70, height: 1.35),
+                      level == 5
+                          ? 'Emergency alert will be sent automatically unless this is a false alarm.'
+                          : 'Emergency assistance request will be sent automatically unless this is a false alarm.',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(height: 1.4),
+                    ),
+                    const SizedBox(height: 18),
+                    LinearProgressIndicator(
+                      value: seconds / 5,
+                      minHeight: 10,
+                      backgroundColor: Colors.grey.shade300,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        Colors.red,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Sending in $seconds second${seconds == 1 ? '' : 's'}...',
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: () {
+                              shouldSend = true;
+                              timer?.cancel();
+                              Navigator.of(dialogContext).pop();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primaryGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: const Text(
+                              'OK',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () {
+                              cancelled = true;
+                              timer?.cancel();
+                              Navigator.of(dialogContext).pop();
+                            },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red.shade700,
+                              side: BorderSide(color: Colors.red.shade700),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                            ),
+                            child: const Text(
+                              'Cancel',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _buildHeroMetric(
-                  'System State',
-                  'Armed',
-                  'Monitoring Active',
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _buildHeroMetric(
-                  'Latest Severity',
-                  latestLevel == 0 ? 'Standby' : 'Level $latestLevel',
-                  latestLevel == 0
-                      ? _statusMessage
-                      : _severityTitle(latestLevel),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () => _triggerManualAlert(5),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade700,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              icon: const Icon(Icons.sos_rounded),
-              label: const Text(
-                'SOS EMERGENCY',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+            );
+          },
+        );
+      },
     );
+
+    timer?.cancel();
+
+    if (cancelled || !shouldSend) {
+      if (cancelled && mounted) {
+        setState(() {
+          _statusMessage = 'Emergency alert cancelled before sending';
+        });
+      }
+      return;
+    }
+
+    await _sendManualEmergencyAlert(level);
+    if (!mounted) {
+      return;
+    }
+    await _showEmergencySentDialog(level);
   }
 
-  Widget _buildImpactClassificationCard() {
-    final levelItems = [
-      {'level': 1, 'label': 'Minor vibration'},
-      {'level': 2, 'label': 'Light impact'},
-      {'level': 3, 'label': 'Significant impact'},
-      {'level': 4, 'label': 'Serious accident'},
-      {'level': 5, 'label': 'Critical emergency'},
-    ];
+  Future<void> _showEmergencySentDialog(int level) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        Future<void>.delayed(const Duration(seconds: 5), () {
+          if (dialogContext.mounted && Navigator.of(dialogContext).canPop()) {
+            Navigator.of(dialogContext).pop();
+          }
+        });
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 14,
-            offset: Offset(0, 8),
-            color: Colors.black12,
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Impact Level Classification',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: _primaryGreen,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Phone taps and everyday handling should stay in Level 1 or Level 2. Level 3 and above require stronger movement based on the calibrated sensor thresholds.',
-            style: TextStyle(color: Colors.grey.shade700, height: 1.35),
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: levelItems.map((item) {
-              final level = item['level'] as int;
-              return Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: _severityColor(level).withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text(
-                  'Level $level - ${item['label']}',
-                  style: TextStyle(
-                    color: _severityColor(level),
-                    fontWeight: FontWeight.w700,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 66,
+                  height: 66,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_outline_rounded,
+                    color: Colors.red,
+                    size: 36,
                   ),
                 ),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeroMetric(String label, String value, String subtitle) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.13),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            subtitle,
-            style: const TextStyle(color: Colors.white70, fontSize: 12),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCurrentAlertCard(Map<String, dynamic>? latest) {
-    final level = (latest?['impact_level'] as num?)?.toInt() ?? 0;
-    final color = _severityColor(level);
-    final hasActiveAlert = latest != null;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 14,
-            offset: Offset(0, 8),
-            color: Colors.black12,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: hasActiveAlert
-                      ? color.withValues(alpha: 0.12)
-                      : _softGreen,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  Icons.warning_amber_rounded,
-                  color: hasActiveAlert ? color : _primaryGreen,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Current Alert Status',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 17,
-                    color: _primaryGreen,
-                  ),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: hasActiveAlert
-                      ? color.withValues(alpha: 0.12)
-                      : Colors.grey.shade200,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  hasActiveAlert ? 'Level $level' : 'None',
-                  style: TextStyle(
-                    color: hasActiveAlert ? color : Colors.grey.shade700,
+                const SizedBox(height: 16),
+                Text(
+                  level == 5 ? 'SOS sent' : 'Emergency sent',
+                  style: const TextStyle(
+                    fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 10),
+                Text(
+                  level == 5
+                      ? 'Critical alert data has been sent to the alert log and notification feeds.'
+                      : 'Emergency assistance data has been sent to the alert log and notification feeds.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(height: 1.4),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 18),
-          _buildStatusRow(
-            'Severity',
-            latest == null ? 'No active impact' : _severityTitle(level),
-          ),
-          _buildStatusRow(
-            'Vehicle Condition',
-            latest?['vehicle_condition']?.toString() ??
-                latest?['vehicle_status']?.toString() ??
-                'All safety systems normal',
-          ),
-          _buildStatusRow(
-            'Emergency Status',
-            latest?['status']?.toString() ?? 'Standby monitoring active',
-          ),
-          _buildStatusRow('Location', _locationText(latest)),
-          _buildStatusRow('Time', _formatTime(latest?['timestamp'])),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildStatusRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 126,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                color: Colors.black87,
-                fontWeight: FontWeight.w600,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showGuidedReportDialog(int level) async {
+    final questions = _questionsForLevel(level);
+    final answers = List<bool?>.filled(questions.length, null);
+    var additionalComments = '';
+    var showValidation = false;
 
-  Widget _buildManualControlCard(List<Map<String, dynamic>> alerts) {
-    final controls = [
-      {
-        'level': 1,
-        'label': 'Minor Incident (L1)',
-        'icon': Icons.vibration_rounded,
-      },
-      {
-        'level': 2,
-        'label': 'Moderate Impact (L2)',
-        'icon': Icons.car_repair_rounded,
-      },
-      {
-        'level': 3,
-        'label': 'Significant Impact (L3)',
-        'icon': Icons.warning_amber_rounded,
-      },
-      {
-        'level': 4,
-        'label': 'Serious Accident (L4)',
-        'icon': Icons.local_hospital_rounded,
-      },
-      {
-        'level': 5,
-        'label': 'Critical Emergency (L5)',
-        'icon': Icons.emergency_rounded,
-      },
-    ];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: const [
-          BoxShadow(
-            blurRadius: 14,
-            offset: Offset(0, 8),
-            color: Colors.black12,
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Manual Emergency Controls',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.bold,
-              color: _primaryGreen,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Use these controls to simulate the same incident flow as the sensor system. Level 4 and Level 5 escalate emergency response automatically.',
-            style: TextStyle(color: Colors.grey.shade700, height: 1.35),
-          ),
-          const SizedBox(height: 16),
-          ...controls.map((control) {
-            final level = control['level'] as int;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: () => _triggerManualAlert(level),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _severityColor(level),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 16,
-                      horizontal: 16,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+    final submitted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, dialogSetState) {
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 24,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 470,
+                  maxHeight: 720,
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(0, 0, 0, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(control['icon'] as IconData),
-                      const SizedBox(width: 10),
-                      Text(
-                        control['label'] as String,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(22, 20, 16, 20),
+                        decoration: const BoxDecoration(
+                          color: _primaryGreen,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(28),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Notify',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    _severityTitle(level),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () =>
+                                  Navigator.of(dialogContext).pop(false),
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                              ),
+                              tooltip: 'Close',
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(22, 18, 22, 0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _questionnaireIntro(level),
+                              style: TextStyle(
+                                color: Colors.grey.shade800,
+                                height: 1.4,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            for (
+                              var index = 0;
+                              index < questions.length;
+                              index++
+                            )
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 18),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      questions[index].prompt,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: _buildDialogChoiceButton(
+                                            label: questions[index].yesLabel,
+                                            selected: answers[index] == true,
+                                            onTap: () {
+                                              dialogSetState(() {
+                                                answers[index] = true;
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: _buildDialogChoiceButton(
+                                            label: questions[index].noLabel,
+                                            selected: answers[index] == false,
+                                            onTap: () {
+                                              dialogSetState(() {
+                                                answers[index] = false;
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            Text(
+                              'Additional comments for ambulance, technician, or support team',
+                              style: TextStyle(
+                                color: Colors.grey.shade800,
+                                fontWeight: FontWeight.w700,
+                                height: 1.35,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              minLines: 3,
+                              maxLines: 4,
+                              textInputAction: TextInputAction.done,
+                              onChanged: (value) {
+                                additionalComments = value.trim();
+                              },
+                              decoration: InputDecoration(
+                                hintText:
+                                    'Add anything important responders should know here.',
+                                hintStyle: TextStyle(
+                                  color: Colors.grey.shade500,
+                                ),
+                                filled: true,
+                                fillColor: _primaryGreen.withValues(
+                                  alpha: 0.04,
+                                ),
+                                contentPadding: const EdgeInsets.all(16),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide(
+                                    color: _primaryGreen.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide(
+                                    color: _primaryGreen.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                  ),
+                                ),
+                                focusedBorder: const OutlineInputBorder(
+                                  borderRadius: BorderRadius.all(
+                                    Radius.circular(18),
+                                  ),
+                                  borderSide: BorderSide(
+                                    color: _primaryGreen,
+                                    width: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                            if (showValidation)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 14),
+                                child: Text(
+                                  'Please answer all questions before continuing.',
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            Center(
+                              child: SizedBox(
+                                width: 170,
+                                child: ElevatedButton(
+                                  onPressed: () {
+                                    if (answers.any(
+                                      (answer) => answer == null,
+                                    )) {
+                                      dialogSetState(() {
+                                        showValidation = true;
+                                      });
+                                      return;
+                                    }
+                                    FocusScope.of(dialogContext).unfocus();
+                                    Navigator.of(dialogContext).pop(true);
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: _primaryGreen,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 14,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Enter',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1009,46 +1118,707 @@ class _AlertPageState extends State<AlertPage> {
                 ),
               ),
             );
-          }),
-          const SizedBox(height: 8),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: _softGreen,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
+          },
+        );
+      },
+    );
+
+    if (submitted != true || answers.any((answer) => answer == null)) {
+      return;
+    }
+
+    await _submitGuidedReport(
+      level,
+      questions,
+      answers.map((answer) => answer ?? false).toList(),
+      additionalComments,
+    );
+  }
+
+  Future<void> _submitGuidedReport(
+    int level,
+    List<_AlertQuestionItem> questions,
+    List<bool> answers,
+    String additionalComments,
+  ) async {
+    await _triggerAlert(
+      level,
+      source: 'guided_report_level_$level',
+      title: 'Level $level driver report submitted',
+      accelerationMagnitude: _manualImpactMagnitudeForLevel(level),
+      detectedAt: DateTime.now(),
+      vehicleStatusOverride: _guidedVehicleStatus(level, answers),
+      extraData: {
+        'incident_category': 'guided_report',
+        'dashboard_rank': 'monitoring',
+        'response_priority': level == 3 ? 'priority_review' : 'routine_review',
+        'driver_response_summary': _questionnaireSummary(level, answers),
+        'responder_note': _responderNote(level, answers),
+        ..._questionnairePayload(
+          questions,
+          answers,
+          additionalComments: additionalComments,
+        ),
+      },
+      showPostAlertDialog: false,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await _showGuidedReportSuccessDialog(level);
+  }
+
+  Future<void> _showGuidedReportSuccessDialog(int level) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.memory_rounded, color: _primaryGreen),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'Automatic accelerometer monitoring is active on this page. Minor taps should stay in low severity, while strong movement is required for serious emergency levels.',
-                    style: TextStyle(color: Colors.grey.shade800, height: 1.3),
+                Container(
+                  width: 66,
+                  height: 66,
+                  decoration: BoxDecoration(
+                    color: _primaryGreen.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_outline_rounded,
+                    color: _primaryGreen,
+                    size: 36,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Submitted',
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Level $level details are now available in the technician and ambulance dashboards for follow-up.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: 160,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primaryGreen,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text(
+                      'OK',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          Center(
-            child: SizedBox(
-              width: 220,
-              child: ElevatedButton(
-                onPressed: () => _cancelLatestAlert(alerts),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey.shade600,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 15),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+        );
+      },
+    );
+  }
+
+  String _questionnaireIntro(int level) {
+    switch (level) {
+      case 1:
+        return 'Please answer a few quick safety questions before sending your Level 1 minor report.';
+      case 2:
+        return 'Tell us what happened so the support team can review your Level 2 impact properly.';
+      default:
+        return 'Complete this short check-in so the team can review your Level 3 case quickly.';
+    }
+  }
+
+  List<_AlertQuestionItem> _questionsForLevel(int level) {
+    switch (level) {
+      case 1:
+        return const [
+          _AlertQuestionItem(prompt: 'Is everyone inside the vehicle safe?'),
+          _AlertQuestionItem(
+            prompt: 'Can the vehicle continue driving normally?',
+          ),
+          _AlertQuestionItem(
+            prompt: 'Do you see any minor exterior scratches or tire issues?',
+          ),
+        ];
+      case 2:
+        return const [
+          _AlertQuestionItem(
+            prompt: 'Did the collision cause visible vehicle damage?',
+          ),
+          _AlertQuestionItem(
+            prompt: 'Do you need technician support at your location?',
+            yesLabel: 'Need help',
+            noLabel: 'No help',
+          ),
+          _AlertQuestionItem(
+            prompt: 'Is the battery or charging area showing a warning sign?',
+          ),
+        ];
+      default:
+        return const [
+          _AlertQuestionItem(
+            prompt: 'Is anyone feeling pain or dizziness after the impact?',
+          ),
+          _AlertQuestionItem(
+            prompt: 'Do you smell smoke or feel unusual battery heat?',
+          ),
+          _AlertQuestionItem(
+            prompt: 'Should the response team contact you immediately?',
+            yesLabel: 'Contact me',
+            noLabel: 'Not now',
+          ),
+        ];
+    }
+  }
+
+  Widget _buildDialogChoiceButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        backgroundColor: selected ? _primaryGreen : Colors.white,
+        foregroundColor: selected ? Colors.white : _primaryGreen,
+        side: const BorderSide(color: _primaryGreen),
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+    );
+  }
+
+  String _guidedVehicleStatus(int level, List<bool> answers) {
+    final positiveAnswers = answers.where((answer) => answer).length;
+    switch (level) {
+      case 1:
+        return positiveAnswers >= 2
+            ? 'Minor incident reported with follow-up checks requested by the driver.'
+            : 'Minor incident reported. Driver is stable and continuing with monitoring.';
+      case 2:
+        return positiveAnswers >= 2
+            ? 'Level 2 impact reported. Technician review is recommended before the next trip.'
+            : 'Level 2 impact reported. Driver can wait for a standard follow-up review.';
+      default:
+        return positiveAnswers >= 2
+            ? 'Level 3 report indicates urgent driver and vehicle follow-up is needed.'
+            : 'Level 3 report logged with stable answers, but manual review is still recommended.';
+    }
+  }
+
+  String _questionnaireSummary(int level, List<bool> answers) {
+    final positiveAnswers = answers.where((answer) => answer).length;
+    if (level == 1) {
+      return positiveAnswers == 0
+          ? 'Driver reports a small issue and no extra support is needed.'
+          : 'Driver reported a minor issue and requested some follow-up attention.';
+    }
+    if (level == 2) {
+      return positiveAnswers <= 1
+          ? 'Driver reports a manageable impact with limited visible issues.'
+          : 'Driver reports a noticeable impact and technician follow-up should be reviewed.';
+    }
+    return positiveAnswers <= 1
+        ? 'Driver reports a moderate incident with stable answers so far.'
+        : 'Driver reports a moderate incident with urgent follow-up indicators.';
+  }
+
+  String _responderNote(int level, List<bool> answers) {
+    final positiveAnswers = answers.where((answer) => answer).length;
+    if (level == 3 && positiveAnswers >= 2) {
+      return 'Keep this case near the top of the monitoring feed and contact the driver soon.';
+    }
+    if (level == 2 && positiveAnswers >= 2) {
+      return 'Technician review should happen before the vehicle continues a long trip.';
+    }
+    return 'Feed card can stay in the standard monitoring queue unless the driver sends more updates.';
+  }
+
+  Map<String, dynamic> _questionnairePayload(
+    List<_AlertQuestionItem> questions,
+    List<bool> answers, {
+    String additionalComments = '',
+  }) {
+    final payload = <String, dynamic>{};
+    for (var index = 0; index < questions.length; index++) {
+      payload['question_${index + 1}'] = questions[index].prompt;
+      payload['answer_${index + 1}'] = answers[index]
+          ? questions[index].yesLabel
+          : questions[index].noLabel;
+    }
+    if (additionalComments.isNotEmpty) {
+      payload['additional_comments'] = additionalComments;
+      payload['responder_comments'] = additionalComments;
+    }
+    return payload;
+  }
+
+  double _manualImpactMagnitudeForLevel(int level) {
+    switch (level) {
+      case 1:
+        return 18;
+      case 2:
+        return 48;
+      case 3:
+        return 78;
+      case 4:
+        return 94;
+      case 5:
+        return 108;
+      default:
+        return 0;
+    }
+  }
+
+  Future<void> _showHelpComingDialog({int level = 5}) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.local_hospital, color: Colors.red, size: 48),
+                const SizedBox(height: 12),
+                Text(
+                  level == 5 ? 'Level 5 SOS sent' : 'Level 4 emergency sent',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  level == 5
+                      ? 'All details have been sent to nearby ambulance drivers and technicians. This case will appear at the top of their emergency dashboards.'
+                      : 'All details have been sent to nearby ambulance drivers and technicians so they can review the emergency case immediately.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(height: 1.4),
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryGreen,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text(
+                    "OK",
+                    style: TextStyle(color: Colors.white),
                   ),
                 ),
-                child: const Text(
-                  'Cancel Alert',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomSystem = MediaQuery.of(context).padding.bottom;
+
+    return Scaffold(
+      backgroundColor: _surface,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            AppHeader(
+              onSearch: (key) {
+                GlobalSearchHandler.handleSearch(context, key);
+              },
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTopOverview(),
+                    const SizedBox(height: 18),
+                    Expanded(child: _buildImpactClassificationCard()),
+                  ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: buildBottomNav(bottomSystem),
+    );
+  }
+
+  Widget _buildTopOverview() {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF1E6B37), Color(0xFF2E7D32)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x22000000),
+                blurRadius: 18,
+                offset: Offset(0, 10),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 45,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: const Icon(
+                  Icons.car_crash_rounded,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Accident Detection',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _statusMessage,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Switch(
+                value: _accidentDetectionEnabled,
+                activeThumbColor: _primaryGreen,
+                activeTrackColor: Colors.white,
+                inactiveThumbColor: Colors.grey.shade200,
+                inactiveTrackColor: Colors.white.withValues(alpha: 0.4),
+                onChanged: _toggleAccidentDetection,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLevelNode({
+    required int level,
+    required String title,
+    required String subtitle,
+    required bool enabled,
+    required bool isTopRow,
+    required bool isLeftColumn,
+    required double width,
+    required double height,
+  }) {
+    final accent = _severityColor(level);
+    final contentAlignment = Alignment(
+      isLeftColumn ? -0.78 : 0.78,
+      isTopRow ? -0.74 : 0.74,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? () => _handleControlPanelPress(level) : null,
+        borderRadius: BorderRadius.circular(28),
+        child: Ink(
+          width: width,
+          height: height,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          decoration: BoxDecoration(
+            color: enabled
+                ? accent.withValues(alpha: 0.1)
+                : Colors.grey.shade200,
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(
+              color: enabled
+                  ? accent.withValues(alpha: 0.22)
+                  : Colors.grey.shade300,
+            ),
+          ),
+          child: Align(
+            alignment: contentAlignment,
+            child: SizedBox(
+              width: width * 0.54,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    level >= 4
+                        ? Icons.warning_amber_rounded
+                        : Icons.health_and_safety_outlined,
+                    color: enabled ? accent : Colors.grey.shade500,
+                    size: 29,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: enabled ? accent : Colors.grey.shade600,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: enabled
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade500,
+                      fontSize: 12,
+                      height: 1.2,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImpactClassificationCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: const [
+          BoxShadow(
+            blurRadius: 14,
+            offset: Offset(0, 8),
+            color: Colors.black12,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Alert Control Hub',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: _primaryGreen,
+            ),
+          ),
+
+          const SizedBox(height: 6),
+          Text(
+            _accidentDetectionEnabled
+                ? 'Manual controls are active while accident detection is armed.'
+                : 'Arm accident detection to enable the emergency control buttons.',
+            style: TextStyle(
+              color: _accidentDetectionEnabled
+                  ? Colors.grey.shade700
+                  : Colors.red.shade700,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const nodeGap = 14.0;
+                final hubWidth = constraints.maxWidth < 374
+                    ? constraints.maxWidth
+                    : 374.0;
+                final hubHeight = constraints.maxHeight < 372
+                    ? constraints.maxHeight
+                    : 372.0;
+                final nodeWidth = (hubWidth - nodeGap) / 2;
+                final nodeHeight = (hubHeight - nodeGap) / 2;
+                final centerSize = hubWidth < 350 ? 146.0 : 156.0;
+
+                return Center(
+                  child: SizedBox(
+                    width: hubWidth,
+                    height: hubHeight,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      alignment: Alignment.center,
+                      children: [
+                        Positioned(
+                          top: 0,
+                          left: 0,
+                          child: _buildLevelNode(
+                            level: 1,
+                            title: 'Level 1',
+                            subtitle: 'Minor',
+                            enabled: _accidentDetectionEnabled,
+                            isTopRow: true,
+                            isLeftColumn: true,
+                            width: nodeWidth,
+                            height: nodeHeight,
+                          ),
+                        ),
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: _buildLevelNode(
+                            level: 2,
+                            title: 'Level 2',
+                            subtitle: 'Moderate',
+                            enabled: _accidentDetectionEnabled,
+                            isTopRow: true,
+                            isLeftColumn: false,
+                            width: nodeWidth,
+                            height: nodeHeight,
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          left: 0,
+                          child: _buildLevelNode(
+                            level: 3,
+                            title: 'Level 3',
+                            subtitle: 'Serious',
+                            enabled: _accidentDetectionEnabled,
+                            isTopRow: false,
+                            isLeftColumn: true,
+                            width: nodeWidth,
+                            height: nodeHeight,
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 0,
+                          right: 0,
+                          child: _buildLevelNode(
+                            level: 4,
+                            title: 'Level 4',
+                            subtitle: 'Emergency',
+                            enabled: _accidentDetectionEnabled,
+                            isTopRow: false,
+                            isLeftColumn: false,
+                            width: nodeWidth,
+                            height: nodeHeight,
+                          ),
+                        ),
+                        Opacity(
+                          opacity: _accidentDetectionEnabled ? 1 : 0.55,
+                          child: Container(
+                            width: centerSize,
+                            height: centerSize,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.red.shade700,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withValues(alpha: 0.28),
+                                  blurRadius: 24,
+                                  spreadRadius: 4,
+                                ),
+                              ],
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                customBorder: const CircleBorder(),
+                                onTap: _accidentDetectionEnabled
+                                    ? () => _handleControlPanelPress(5)
+                                    : null,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(20),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.sos_rounded,
+                                        color: Colors.white,
+                                        size: 42,
+                                      ),
+                                      SizedBox(height: 8),
+                                      Text(
+                                        'Level 5',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 20,
+                                        ),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'SOS',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],
@@ -1056,212 +1826,9 @@ class _AlertPageState extends State<AlertPage> {
     );
   }
 
-  Widget _buildHistorySection(List<Map<String, dynamic>> alerts) {
-    final subtitle = _selectedHistoryDate == null
-        ? 'Showing the latest incident records from the last 7 days.'
-        : 'Showing alerts for ${_formatDateLabel(_selectedHistoryDate!)}.';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text(
-                'Alert History',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
-                  color: _primaryGreen,
-                ),
-              ),
-            ),
-            if (_selectedHistoryDate != null)
-              TextButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedHistoryDate = null;
-                  });
-                },
-                child: const Text(
-                  'Last 7 Days',
-                  style: TextStyle(color: _primaryGreen),
-                ),
-              ),
-            IconButton(
-              onPressed: _pickHistoryDate,
-              icon: const Icon(
-                Icons.calendar_month_rounded,
-                color: _primaryGreen,
-              ),
-              tooltip: 'Filter by date',
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: TextStyle(color: Colors.grey.shade700),
-        ),
-        const SizedBox(height: 10),
-        if (alerts.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: const [
-                BoxShadow(
-                  blurRadius: 14,
-                  offset: Offset(0, 8),
-                  color: Colors.black12,
-                ),
-              ],
-            ),
-            child: Column(
-              children: [
-                Icon(
-                  Icons.history_toggle_off_rounded,
-                  size: 38,
-                  color: Colors.grey.shade500,
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  'No incidents found for the selected period.',
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          ListView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: alerts.length,
-            itemBuilder: (context, index) {
-              final alert = alerts[index];
-              final level = (alert['impact_level'] as num?)?.toInt() ?? 0;
-              final severityColor = _severityColor(level);
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(
-                      blurRadius: 12,
-                      offset: Offset(0, 8),
-                      color: Colors.black12,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          margin: const EdgeInsets.only(top: 2),
-                          width: 12,
-                          height: 12,
-                          decoration: BoxDecoration(
-                            color: severityColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            alert['title']?.toString() ?? '-',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: severityColor.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            'L$level',
-                            style: TextStyle(
-                              color: severityColor,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildHistoryLine('Alert Type', _alertTypeForLevel(level)),
-                    _buildHistoryLine(
-                      'Severity',
-                      alert['severity']?.toString() ?? _severityTitle(level),
-                    ),
-                    _buildHistoryLine(
-                      'Vehicle Status',
-                      alert['vehicle_condition']?.toString() ??
-                          alert['vehicle_status']?.toString() ??
-                          '-',
-                    ),
-                    _buildHistoryLine('Location', _locationText(alert)),
-                    _buildHistoryLine(
-                      'Action Taken',
-                      alert['status']?.toString() ?? '-',
-                    ),
-                    _buildHistoryLine(
-                      'Timestamp',
-                      _formatTime(alert['timestamp']),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-      ],
-    );
-  }
-
-  Widget _buildHistoryLine(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: RichText(
-        text: TextSpan(
-          style: const TextStyle(color: Colors.black87, height: 1.35),
-          children: [
-            TextSpan(
-              text: '$label: ',
-              style: TextStyle(
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            TextSpan(
-              text: value,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget buildBottomNav(double bottomSystem) {
     return Container(
-      height: 85 + bottomSystem,
+      height: 88 + bottomSystem,
       padding: EdgeInsets.only(top: 8, bottom: bottomSystem + 8),
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -1342,4 +1909,16 @@ class _AlertPageState extends State<AlertPage> {
       ),
     );
   }
+}
+
+class _AlertQuestionItem {
+  const _AlertQuestionItem({
+    required this.prompt,
+    this.yesLabel = 'Yes',
+    this.noLabel = 'No',
+  });
+
+  final String prompt;
+  final String yesLabel;
+  final String noLabel;
 }

@@ -1,17 +1,21 @@
 import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
 
-import 'login_page.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+
+import '../services/app_repository.dart';
+import 'ambulance_driver_edit_profile.dart';
+import 'ambulance_profile.dart';
 import 'change_password.dart';
-import 'view_profile.dart';
 import 'edit_profile.dart';
-import 'support.dart';
-import 'report_problem.dart';
-import 'terms.dart';
 import 'language.dart';
+import 'login_page.dart';
+import 'notification_settings.dart';
 import 'privacy_policy.dart';
+import 'report_problem.dart';
+import 'support.dart';
+import 'terms.dart';
+import 'view_profile.dart';
 
 class MenuPage extends StatefulWidget {
   const MenuPage({super.key});
@@ -21,265 +25,308 @@ class MenuPage extends StatefulWidget {
 }
 
 class _MenuPageState extends State<MenuPage> {
-
-  final FirebaseAuth mAuth = FirebaseAuth.instance;
-
-  final DatabaseReference dbRef =
-  FirebaseDatabase.instanceFor(
-    app: FirebaseAuth.instance.app,
-    databaseURL:
-    "https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app",
-  ).ref("Users");
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   bool showProfile = false;
   bool showHelp = false;
   bool showSettings = false;
 
-  String userName = "User";
+  String userName = 'User';
+  String role = '';
   String? profileImageBase64;
 
   @override
   void initState() {
     super.initState();
-    loadUserData();
+    _loadUserData();
   }
 
-  Future<void> loadUserData() async {
+  Future<void> _loadUserData() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return;
+    }
 
-    if (mAuth.currentUser == null) return;
+    final profile = await AppRepository.getCurrentUserProfile() ?? <String, dynamic>{};
+    final normalizedRole = profile['role']?.toString() ?? '';
+    Map<String, dynamic>? roleProfile;
 
-    final snapshot =
-    await dbRef.child(mAuth.currentUser!.uid).get();
+    if (_isAmbulanceRole(normalizedRole)) {
+      roleProfile = await AppRepository.getProfileByPath(
+        AppRepository.ambulanceProfilesRef,
+        user.uid,
+      );
+    }
 
-    if (!snapshot.exists) return;
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
-      userName =
-          snapshot.child("fullName").value?.toString() ?? "User";
-
+      role = normalizedRole;
+      userName = _resolveUserName(profile, normalizedRole, roleProfile);
       profileImageBase64 =
-          snapshot.child("profileImage").value?.toString();
+          roleProfile?['profileImage']?.toString() ??
+          roleProfile?['profile_image']?.toString() ??
+          profile['profileImage']?.toString();
     });
+  }
+
+  String _resolveUserName(
+    Map<String, dynamic> profile,
+    String normalizedRole,
+    Map<String, dynamic>? roleProfile,
+  ) {
+    if (_isAmbulanceRole(normalizedRole)) {
+      return roleProfile?['driver_name']?.toString() ??
+          roleProfile?['ambulance_name']?.toString() ??
+          profile['fullName']?.toString() ??
+          'Ambulance User';
+    }
+
+    return profile['fullName']?.toString() ??
+        profile['username']?.toString() ??
+        'EV Driver';
+  }
+
+  bool _isAmbulanceRole(String value) {
+    final normalized = value.toLowerCase();
+    return normalized.contains('ambulance') || normalized.contains('hospital');
   }
 
   ImageProvider _buildProfileImage() {
     try {
       if (profileImageBase64 != null &&
           profileImageBase64!.isNotEmpty &&
-          profileImageBase64 != "null") {
-
+          profileImageBase64 != 'null') {
         final cleaned = profileImageBase64!
-            .replaceAll("\n", "")
-            .replaceAll("\r", "")
+            .replaceAll('\n', '')
+            .replaceAll('\r', '')
             .trim();
-
         return MemoryImage(base64Decode(cleaned));
       }
     } catch (_) {}
 
-    return const AssetImage("assets/images/ic_user_profile.png");
+    return const AssetImage('assets/images/ic_user_profile.png');
   }
 
-  Future<void> deleteAccount() async {
+  Future<void> _deleteAccount() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return;
+    }
 
-    if (mAuth.currentUser == null) return;
+    final uid = user.uid;
+    await Future.wait([
+      AppRepository.usersRef.child(uid).remove(),
+      AppRepository.legacyUsersRef.child(uid).remove(),
+      AppRepository.vehiclesRef.child(uid).remove(),
+      AppRepository.ambulanceProfilesRef.child(uid).remove(),
+      AppRepository.technicianProfilesRef.child(uid).remove(),
+    ]);
+    await user.delete();
 
-    String uid = mAuth.currentUser!.uid;
-
-    await dbRef.child(uid).remove();
-    await mAuth.currentUser!.delete();
-
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
-          (route) => false,
+      (route) => false,
     );
   }
 
-  void showDeleteDialog() {
-    showDialog(
+  void _showDeleteDialog() {
+    showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Delete Account"),
+        title: const Text('Delete Account'),
         content: const Text(
-            "Are you sure you want to delete your account?\n\nThis action cannot be undone."),
+          'Are you sure you want to delete your account?\n\nThis action cannot be undone.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("No")),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('No'),
+          ),
           TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                deleteAccount();
-              },
-              child: const Text("Yes",
-                  style: TextStyle(color: Colors.red))),
+            onPressed: () {
+              Navigator.pop(context);
+              _deleteAccount();
+            },
+            child: const Text('Yes', style: TextStyle(color: Colors.red)),
+          ),
         ],
       ),
     );
   }
 
-  void logoutUser() {
-    mAuth.signOut();
+  void _logoutUser() {
+    _auth.signOut();
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => const LoginPage()),
-          (route) => false,
+      (route) => false,
     );
+  }
+
+  Widget _buildProfileViewPage() {
+    if (_isAmbulanceRole(role)) {
+      return const AmbulanceProfilePage();
+    }
+    return const ViewProfilePage();
+  }
+
+  Widget _buildEditProfilePage() {
+    if (_isAmbulanceRole(role)) {
+      return const AmbulanceDriverEditProfilePage();
+    }
+    return const EditProfilePage();
   }
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
-
-          // ===== LIGHT OVERLAY (FIXED HERE) =====
           GestureDetector(
             onTap: () => Navigator.pop(context),
-            child: Container(
-              color: Colors.white.withOpacity(0.6), // 👈 changed
-            ),
+            child: Container(color: Colors.white.withValues(alpha: 0.6)),
           ),
-
-          // ===== SIDE DRAWER PANEL =====
           Align(
             alignment: Alignment.centerLeft,
             child: Container(
-              width: 280,
+              width: 300,
               height: double.infinity,
               color: Colors.white,
               child: SingleChildScrollView(
-                padding:
-                const EdgeInsets.fromLTRB(16, 48, 16, 16),
+                padding: const EdgeInsets.fromLTRB(18, 48, 18, 18),
                 child: Column(
-                  crossAxisAlignment:
-                  CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-
                     Row(
                       children: [
                         CircleAvatar(
                           radius: 30,
-                          backgroundColor:
-                          Colors.grey[300],
-                          backgroundImage:
-                          _buildProfileImage(),
+                          backgroundColor: Colors.grey[300],
+                          backgroundImage: _buildProfileImage(),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
-                          child: Text(
-                            userName,
-                            style: const TextStyle(
-                                fontSize: 20,
-                                fontWeight:
-                                FontWeight.bold),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                userName,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (role.isNotEmpty)
+                                Text(
+                                  role,
+                                  style: const TextStyle(color: Colors.black54),
+                                ),
+                            ],
                           ),
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 20),
                     const Divider(),
-
-                    buildSectionTitle("👤 Profile ▼", () {
+                    _buildSectionTitle('Profile', () {
                       setState(() {
                         showProfile = !showProfile;
                       });
                     }),
-
                     if (showProfile) ...[
-                      buildItem("View Profile", () {
+                      _buildItem('View Profile', () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                              const ViewProfilePage()),
-                        );
+                            builder: (_) => _buildProfileViewPage(),
+                          ),
+                        ).then((_) => _loadUserData());
                       }),
-                      buildItem("Edit Profile", () {
+                      _buildItem('Edit Profile', () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                              const EditProfilePage()),
-                        );
+                            builder: (_) => _buildEditProfilePage(),
+                          ),
+                        ).then((_) => _loadUserData());
                       }),
-                      buildItem("Change Password", () {
+                      _buildItem('Change Password', () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                              const ChangePasswordPage()),
+                            builder: (_) => const ChangePasswordPage(),
+                          ),
                         );
                       }),
-                      buildItem("Delete Account",
-                          showDeleteDialog,
-                          color: Colors.red),
-                      buildItem("Logout", logoutUser),
+                      _buildItem(
+                        'Delete Account',
+                        _showDeleteDialog,
+                        color: Colors.red,
+                      ),
+                      _buildItem('Logout', _logoutUser),
                     ],
-
-                    buildSectionTitle(
-                        "❓ Help And Support ▼", () {
+                    _buildSectionTitle('Help And Support', () {
                       setState(() {
                         showHelp = !showHelp;
                       });
                     }),
-
                     if (showHelp) ...[
-                      buildItem("Support", () {
+                      _buildItem('Support', () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                              const SupportPage()),
+                          MaterialPageRoute(builder: (_) => const SupportPage()),
                         );
                       }),
-                      buildItem("Report Problem", () {
+                      _buildItem('Report Problem', () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                              const ReportProblemPage()),
+                            builder: (_) => const ReportProblemPage(),
+                          ),
                         );
                       }),
-                      buildItem(
-                          "Terms And Conditions", () {
+                      _buildItem('Terms And Conditions', () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                              const TermsPage()),
+                          MaterialPageRoute(builder: (_) => const TermsPage()),
                         );
                       }),
                     ],
-
-                    buildSectionTitle(
-                        "⚙️ Settings And Privacy ▼", () {
+                    _buildSectionTitle('Settings And Privacy', () {
                       setState(() {
                         showSettings = !showSettings;
                       });
                     }),
-
                     if (showSettings) ...[
-                      buildItem("Language", () {
+                      _buildItem('Notification Settings', () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                              const LanguagePage()),
+                            builder: (_) => const NotificationSettingsPage(),
+                          ),
                         );
                       }),
-                      buildItem("Privacy Policy", () {
+                      _buildItem('Language', () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const LanguagePage()),
+                        );
+                      }),
+                      _buildItem('Privacy Policy', () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) =>
-                              const PrivacyPolicyPage()),
+                            builder: (_) => const PrivacyPolicyPage(),
+                          ),
                         );
                       }),
                     ],
@@ -293,37 +340,29 @@ class _MenuPageState extends State<MenuPage> {
     );
   }
 
-  Widget buildSectionTitle(
-      String title, VoidCallback onTap) {
+  Widget _buildSectionTitle(String title, VoidCallback onTap) {
     return Padding(
-      padding:
-      const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12),
       child: GestureDetector(
         onTap: onTap,
         child: Text(
-          title,
-          style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold),
+          '$title ▼',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
         ),
       ),
     );
   }
 
-  Widget buildItem(String title,
-      VoidCallback onTap,
-      {Color color = Colors.black}) {
+  Widget _buildItem(
+    String title,
+    VoidCallback onTap, {
+    Color color = Colors.black,
+  }) {
     return Padding(
-      padding:
-      const EdgeInsets.only(left: 12, bottom: 12),
+      padding: const EdgeInsets.only(left: 12, bottom: 12),
       child: GestureDetector(
         onTap: onTap,
-        child: Text(
-          title,
-          style: TextStyle(
-              fontSize: 15,
-              color: color),
-        ),
+        child: Text(title, style: TextStyle(fontSize: 15, color: color)),
       ),
     );
   }

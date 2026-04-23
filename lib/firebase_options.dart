@@ -46,7 +46,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1016507832438',
     projectId: 'evsmart-2694c',
     authDomain: 'evsmart-2694c.firebaseapp.com',
-    databaseURL: 'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'evsmart-2694c.firebasestorage.app',
   );
 
@@ -55,7 +56,8 @@ class DefaultFirebaseOptions {
     appId: '1:1016507832438:android:66023a26b0427f86e26757',
     messagingSenderId: '1016507832438',
     projectId: 'evsmart-2694c',
-    databaseURL: 'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'evsmart-2694c.firebasestorage.app',
   );
 
@@ -64,7 +66,8 @@ class DefaultFirebaseOptions {
     appId: '1:1016507832438:ios:fc56018a8b2f56dfe26757',
     messagingSenderId: '1016507832438',
     projectId: 'evsmart-2694c',
-    databaseURL: 'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'evsmart-2694c.firebasestorage.app',
     iosBundleId: 'com.evsmart.plus.evsmartPlus',
   );
@@ -74,7 +77,8 @@ class DefaultFirebaseOptions {
     appId: '1:1016507832438:ios:fc56018a8b2f56dfe26757',
     messagingSenderId: '1016507832438',
     projectId: 'evsmart-2694c',
-    databaseURL: 'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'evsmart-2694c.firebasestorage.app',
     iosBundleId: 'com.evsmart.plus.evsmartPlus',
   );
@@ -85,7 +89,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '1016507832438',
     projectId: 'evsmart-2694c',
     authDomain: 'evsmart-2694c.firebaseapp.com',
-    databaseURL: 'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'evsmart-2694c.firebasestorage.app',
   );
 }

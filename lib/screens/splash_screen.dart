@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+
+import '../services/impact_detection_service.dart';
 import 'login_page.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -10,22 +12,38 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  bool _started = false;
 
   @override
   void initState() {
     super.initState();
 
-    Timer(const Duration(seconds: 2), () {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const LoginPage()),
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startSplashFlow();
     });
+  }
+
+  Future<void> _startSplashFlow() async {
+    if (_started || !mounted) {
+      return;
+    }
+    _started = true;
+
+    await ImpactDetectionService.maybeRequestBackgroundPermission(context);
+    await Future<void>.delayed(const Duration(seconds: 2));
+
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(

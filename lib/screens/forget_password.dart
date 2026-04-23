@@ -7,7 +7,6 @@ class ForgotMethodPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -17,7 +16,6 @@ class ForgotMethodPage extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-
                 const Text(
                   "Reset Password",
                   style: TextStyle(
@@ -34,23 +32,19 @@ class ForgotMethodPage extends StatelessWidget {
                   height: 50,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                      const Color(0xFF2E7D32),
+                      backgroundColor: const Color(0xFF2E7D32),
                     ),
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) =>
-                          const ForgotEmailPage(),
+                          builder: (context) => const ForgotEmailPage(),
                         ),
                       );
                     },
                     child: const Text(
                       "Reset via Email",
-                      style: TextStyle(
-                        color: Colors.white,
-                      ),
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ),
@@ -62,23 +56,19 @@ class ForgotMethodPage extends StatelessWidget {
                   height: 50,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor:
-                      const Color(0xFF2E7D32),
+                      backgroundColor: const Color(0xFF2E7D32),
                     ),
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) =>
-                          const ForgotPhonePage(),
+                          builder: (context) => const ForgotPhonePage(),
                         ),
                       );
                     },
                     child: const Text(
                       "Reset via Phone",
-                      style: TextStyle(
-                        color: Colors.white,
-                      ),
+                      style: TextStyle(color: Colors.white),
                     ),
                   ),
                 ),

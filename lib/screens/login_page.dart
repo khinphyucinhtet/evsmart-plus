@@ -1,13 +1,14 @@
-import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'register.dart';
-import 'home_driver.dart';
+import '../services/app_repository.dart';
+import '../services/impact_detection_service.dart';
 import 'forget_password.dart';
 import 'health_home.dart';
-import 'tech_home.dart';
+import 'home_driver.dart';
+import 'register.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -17,173 +18,223 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-
   final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
-
   final FirebaseAuth mAuth = FirebaseAuth.instance;
-
-  final DatabaseReference userRef =
-  FirebaseDatabase.instanceFor(
-    app: FirebaseAuth.instance.app,
-    databaseURL:
-    "https://evsmart-2694c-default-rtdb.asia-southeast1.firebasedatabase.app",
-  ).ref("Users");
+  final LocalAuthentication _localAuth = LocalAuthentication();
 
   bool rememberMe = false;
   bool isLoading = false;
+  bool isBiometricAvailable = false;
+  bool isBiometricLoading = false;
+  String _savedRole = '';
 
   @override
   void initState() {
     super.initState();
-    loadSavedUsername();
+    loadSavedLoginState();
   }
 
-  Future<void> loadSavedUsername() async {
-    SharedPreferences prefs =
-    await SharedPreferences.getInstance();
-
-    String savedUsername =
-        prefs.getString("username") ?? "";
+  Future<void> loadSavedLoginState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedUsername = prefs.getString('username') ?? '';
+    final savedRole = prefs.getString('saved_role') ?? '';
 
     if (savedUsername.isNotEmpty) {
       usernameController.text = savedUsername;
-      setState(() {
-        rememberMe = true;
-      });
     }
+
+    final deviceSupported = await _localAuth.isDeviceSupported();
+    final canCheckBiometrics = await _localAuth.canCheckBiometrics;
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      rememberMe = savedUsername.isNotEmpty;
+      _savedRole = savedRole;
+      isBiometricAvailable =
+          savedUsername.isNotEmpty &&
+          savedRole.isNotEmpty &&
+          mAuth.currentUser != null &&
+          (deviceSupported || canCheckBiometrics);
+    });
   }
 
-  // ================= LOGIN =================
   Future<void> loginUser() async {
-
-    String username = usernameController.text.trim();
-    String password = passwordController.text.trim();
+    final username = usernameController.text.trim();
+    final password = passwordController.text.trim();
 
     if (username.isEmpty || password.isEmpty) {
-      showMessage("Please fill all fields");
+      showMessage('Please fill all fields');
       return;
     }
 
     setState(() => isLoading = true);
 
     try {
-
-      final snapshot =
-      await userRef
-          .orderByChild("username")
+      final snapshot = await AppRepository.usersRef
+          .orderByChild('username')
           .equalTo(username)
           .get();
-
       if (!snapshot.exists) {
-        showMessage("Username not found");
-        setState(() => isLoading = false);
+        final legacy = await AppRepository.legacyUsersRef
+            .orderByChild('username')
+            .equalTo(username)
+            .get();
+        if (!legacy.exists) {
+          showMessage('Username not found');
+          setState(() => isLoading = false);
+          return;
+        }
+
+        final first = legacy.children.first;
+        final email = first.child('email').value?.toString() ?? '';
+        final uid = first.key!;
+        await mAuth.signInWithEmailAndPassword(
+          email: email,
+          password: password,
+        );
+        await fetchUserRole(uid, username: username);
         return;
       }
 
-      String? email;
-      String? uid;
+      final first = snapshot.children.first;
+      final email = first.child('email').value?.toString() ?? '';
+      final uid = first.key!;
+      await mAuth.signInWithEmailAndPassword(email: email, password: password);
+      await fetchUserRole(uid, username: username);
+    } catch (e) {
+      showMessage('Wrong password or account');
+      setState(() => isLoading = false);
+    }
+  }
 
-      for (final child in snapshot.children) {
-        email = child.child("email").value?.toString();
-        uid = child.key;
-        break;
-      }
+  Future<void> _persistLoginState({
+    required String username,
+    required String uid,
+    required String role,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (rememberMe) {
+      await prefs.setString('username', username);
+      await prefs.setString('saved_uid', uid);
+      await prefs.setString('saved_role', role);
+    } else {
+      await prefs.remove('username');
+      await prefs.remove('saved_uid');
+      await prefs.remove('saved_role');
+    }
+  }
 
-      if (email == null || email.isEmpty) {
-        showMessage("Account error: No email");
-        setState(() => isLoading = false);
-        return;
-      }
+  Future<void> fetchUserRole(String uid, {String? username}) async {
+    final snapshot = await AppRepository.usersRef.child(uid).get();
+    final legacySnapshot = await AppRepository.legacyUsersRef.child(uid).get();
+    final data = snapshot.exists ? snapshot : legacySnapshot;
 
-      await mAuth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
+    if (!data.exists) {
+      showMessage('User data missing');
+      setState(() => isLoading = false);
+      return;
+    }
+
+    final role = data.child('role').value?.toString() ?? '';
+    if (role.isEmpty) {
+      showMessage('Role not assigned');
+      setState(() => isLoading = false);
+      return;
+    }
+
+    await _persistLoginState(
+      username: username ?? usernameController.text.trim(),
+      uid: uid,
+      role: role,
+    );
+
+    await redirectByRole(role);
+  }
+
+  Future<void> loginWithBiometrics() async {
+    if (isBiometricLoading) {
+      return;
+    }
+
+    final username = usernameController.text.trim();
+    if (username.isEmpty || _savedRole.isEmpty || mAuth.currentUser == null) {
+      showMessage('Sign in once with password and Remember Me first');
+      return;
+    }
+
+    setState(() => isBiometricLoading = true);
+
+    try {
+      final didAuthenticate = await _localAuth.authenticate(
+        localizedReason: 'Use your fingerprint to sign in to EVSmart+',
+        options: const AuthenticationOptions(
+          biometricOnly: true,
+          stickyAuth: true,
+        ),
       );
 
-      SharedPreferences prefs =
-      await SharedPreferences.getInstance();
-
-      if (rememberMe) {
-        await prefs.setString("username", username);
-      } else {
-        await prefs.remove("username");
+      if (!mounted) {
+        return;
       }
 
-      await fetchUserRole(uid!);
-
-    } catch (e) {
-      showMessage("Wrong password or account");
-      setState(() => isLoading = false);
-    }
-  }
-
-  // ================= FETCH ROLE =================
-  Future<void> fetchUserRole(String uid) async {
-
-    final snapshot =
-    await userRef.child(uid).get();
-
-    if (!snapshot.exists) {
-      showMessage("User data missing");
-      setState(() => isLoading = false);
-      return;
-    }
-
-    String? role =
-    snapshot.child("role").value?.toString();
-
-    if (role == null || role.isEmpty) {
-      showMessage("Role not assigned");
-      setState(() => isLoading = false);
-      return;
-    }
-
-    redirectByRole(role);
-  }
-
-  // ================= REDIRECT =================
-  void redirectByRole(String role) {
-
-    Widget page;
-
-    switch (role) {
-
-      case "EV Driver (User)":
-        page = const DriverHomePage();
-        break;
-
-      case "Hospital Staff / Ambulance":
-        page = const HealthHomePage();
-        break;
-
-      case "Towing Technician":
-        page = const TechHomePage();
-        break;
-
-      default:
-        showMessage("Invalid role: $role");
-        setState(() => isLoading = false);
+      if (!didAuthenticate) {
+        setState(() => isBiometricLoading = false);
         return;
+      }
+
+      await _persistLoginState(
+        username: username,
+        uid: mAuth.currentUser!.uid,
+        role: _savedRole,
+      );
+      await redirectByRole(_savedRole);
+    } catch (_) {
+      showMessage('Fingerprint sign-in is not available right now');
+      setState(() => isBiometricLoading = false);
+    }
+  }
+
+  Future<void> redirectByRole(String role) async {
+    late final Widget page;
+    final normalized = role.trim().toLowerCase();
+
+    if (normalized.contains('driver')) {
+      page = const DriverHomePage();
+    } else if (normalized.contains('ambulance') ||
+        normalized.contains('hospital')) {
+      page = const HealthHomePage();
+    } else {
+      showMessage(
+        'This app now supports EV Driver and Ambulance accounts only.',
+      );
+      setState(() => isLoading = false);
+      return;
+    }
+
+    await ImpactDetectionService.maybeRequestBackgroundPermission(context);
+    if (!mounted) {
+      return;
     }
 
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (_) => page),
-          (route) => false,
+      (route) => false,
     );
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(
-        SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -192,12 +243,10 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-
               const SizedBox(height: 80),
-
               const Center(
                 child: Text(
-                  "EVSmart+ Login",
+                  'EVSmart+ Login',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 28,
@@ -206,192 +255,143 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 30),
-
-              // ================= USERNAME =================
               SizedBox(
                 height: 50,
                 child: TextField(
                   controller: usernameController,
                   style: const TextStyle(color: Colors.black),
-                  decoration: InputDecoration(
-                    hintText: "Username",
-                    hintStyle:
-                    const TextStyle(color: Colors.grey),
-                    contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12),
-
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius:
-                      BorderRadius.circular(6),
-                      borderSide:
-                      const BorderSide(color: Colors.grey),
-                    ),
-
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius:
-                      BorderRadius.circular(6),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF2E7D32),
-                        width: 2,
-                      ),
-                    ),
-                  ),
+                  decoration: _inputDecoration('Username'),
                 ),
               ),
-
               const SizedBox(height: 15),
-
-              // ================= PASSWORD =================
               SizedBox(
                 height: 50,
                 child: TextField(
                   controller: passwordController,
                   obscureText: true,
                   style: const TextStyle(color: Colors.black),
-                  decoration: InputDecoration(
-                    hintText: "Password",
-                    hintStyle:
-                    const TextStyle(color: Colors.grey),
-                    contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12),
-
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius:
-                      BorderRadius.circular(6),
-                      borderSide:
-                      const BorderSide(color: Colors.grey),
-                    ),
-
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius:
-                      BorderRadius.circular(6),
-                      borderSide: const BorderSide(
-                        color: Color(0xFF2E7D32),
-                        width: 2,
-                      ),
-                    ),
-                  ),
+                  decoration: _inputDecoration('Password'),
                 ),
               ),
-
               const SizedBox(height: 10),
-
-              // ================= REMEMBER + FORGOT =================
               Row(
                 children: [
-
-                  Theme(
-                    data: Theme.of(context).copyWith(
-                      checkboxTheme:
-                      CheckboxThemeData(
-                        fillColor:
-                        MaterialStateProperty.resolveWith(
-                                (states) {
-                              if (states.contains(
-                                  MaterialState.selected)) {
-                                return const Color(
-                                    0xFF2E7D32);
-                              }
-                              return Colors.white;
-                            }),
-                      ),
-                    ),
-                    child: Checkbox(
-                      value: rememberMe,
-                      onChanged: (value) {
-                        setState(() {
-                          rememberMe =
-                              value ?? false;
-                        });
-                      },
-                    ),
+                  Checkbox(
+                    activeColor: const Color(0xFF2E7D32),
+                    value: rememberMe,
+                    onChanged: (value) {
+                      setState(() {
+                        rememberMe = value ?? false;
+                      });
+                    },
                   ),
-
                   const Text(
-                    "Remember Me",
-                    style:
-                    TextStyle(color: Colors.black),
+                    'Remember Me',
+                    style: TextStyle(color: Colors.black),
                   ),
-
                   const Spacer(),
-
                   TextButton(
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                          const ForgotMethodPage(),
+                          builder: (_) => const ForgotMethodPage(),
                         ),
                       );
                     },
                     child: const Text(
-                      "Forgot Password?",
+                      'Forgot Password?',
                       style: TextStyle(
                         color: Color(0xFF2E7D32),
-                        fontWeight:
-                        FontWeight.bold,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                   ),
                 ],
               ),
-
               const SizedBox(height: 25),
-
-              // ================= SIGN IN =================
               SizedBox(
                 width: double.infinity,
                 height: 50,
                 child: ElevatedButton(
-                  style:
-                  ElevatedButton.styleFrom(
-                    backgroundColor:
-                    const Color(0xFF2E7D32),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2E7D32),
                   ),
-                  onPressed:
-                  isLoading ? null : loginUser,
+                  onPressed: isLoading ? null : loginUser,
                   child: isLoading
-                      ? const CircularProgressIndicator(
-                      color: Colors.white)
+                      ? const CircularProgressIndicator(color: Colors.white)
                       : const Text(
-                    "Sign In",
-                    style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.white),
-                  ),
+                          'Sign In',
+                          style: TextStyle(fontSize: 18, color: Colors.white),
+                        ),
                 ),
               ),
-
+              if (isBiometricAvailable) ...[
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF2E7D32),
+                      side: const BorderSide(color: Color(0xFF2E7D32)),
+                    ),
+                    onPressed: isBiometricLoading ? null : loginWithBiometrics,
+                    icon: isBiometricLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.fingerprint_rounded),
+                    label: const Text(
+                      'Use Fingerprint',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 20),
-
               TextButton(
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                      const RegisterPage(),
-                    ),
+                    MaterialPageRoute(builder: (_) => const RegisterPage()),
                   );
                 },
                 child: const Text(
-                  "Create Account",
+                  'Create Account',
                   style: TextStyle(
                     fontSize: 16,
-                    fontWeight:
-                    FontWeight.bold,
+                    fontWeight: FontWeight.bold,
                     color: Color(0xFF2E7D32),
                   ),
                 ),
               ),
-
               const SizedBox(height: 30),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.grey),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: Colors.grey),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(6),
+        borderSide: const BorderSide(color: Color(0xFF2E7D32), width: 2),
       ),
     );
   }
