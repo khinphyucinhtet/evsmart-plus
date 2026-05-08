@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/app_repository.dart';
 import '../services/impact_detection_service.dart';
 import 'alert.dart';
+import 'app_footer.dart';
 import 'app_header.dart';
 import 'charge.dart';
 import 'global_search.dart';
@@ -22,7 +23,6 @@ class NotificationPage extends StatefulWidget {
 class _NotificationPageState extends State<NotificationPage> {
   static const Color _primaryGreen = Color(0xFF2E7D32);
 
-  int selectedTab = 3;
   String filter = 'All';
   late final ImpactDetectionService _impactService;
   bool _isImpactDialogVisible = false;
@@ -723,8 +723,6 @@ class _NotificationPageState extends State<NotificationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomSystem = MediaQuery.of(context).padding.bottom;
-
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: AppRepository.streamNotifications(),
       builder: (context, snapshot) {
@@ -838,10 +836,34 @@ class _NotificationPageState extends State<NotificationPage> {
               ],
             ),
           ),
-          bottomNavigationBar: buildBottomNav(bottomSystem),
+          bottomNavigationBar: AppFooter(
+            currentIndex: 3,
+            onTap: _handleFooterTap,
+            activeColor: _primaryGreen,
+          ),
         );
       },
     );
+  }
+
+  void _handleFooterTap(int index) {
+    if (index == 3) {
+      return;
+    }
+
+    final page = switch (index) {
+      0 => const DriverHomePage(),
+      1 => const ChargePage(),
+      2 => const AlertPage(),
+      4 => const RewardsPage(),
+      _ => null,
+    };
+
+    if (page == null) {
+      return;
+    }
+
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => page));
   }
 
   Widget buildFilter() {
@@ -1693,89 +1715,5 @@ class _NotificationPageState extends State<NotificationPage> {
       default:
         return Colors.grey.shade500;
     }
-  }
-
-  Widget buildBottomNav(double bottomSystem) {
-    return Container(
-      height: 85 + bottomSystem,
-      padding: EdgeInsets.only(top: 8, bottom: bottomSystem + 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(blurRadius: 12, color: Colors.black12)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          buildTab(Icons.home, 'Home', 0),
-          buildTab(Icons.ev_station, 'Charge', 1),
-          buildTab(Icons.warning, 'Alert', 2),
-          buildTab(Icons.notifications, 'Noti', 3),
-          buildTab(Icons.card_giftcard, 'Rewards', 4),
-        ],
-      ),
-    );
-  }
-
-  Widget buildTab(IconData icon, String label, int index) {
-    final isActive = selectedTab == index;
-
-    return GestureDetector(
-      onTap: () {
-        if (index == 3) {
-          return;
-        }
-
-        if (index == 0) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DriverHomePage()),
-          );
-        }
-
-        if (index == 1) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const ChargePage()),
-          );
-        }
-
-        if (index == 2) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const AlertPage()),
-          );
-        }
-
-        if (index == 4) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const RewardsPage()),
-          );
-        }
-      },
-      child: Container(
-        width: 70,
-        decoration: isActive
-            ? BoxDecoration(
-                color: _primaryGreen.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              )
-            : null,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24, color: isActive ? _primaryGreen : Colors.grey),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: isActive ? _primaryGreen : Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

@@ -34,6 +34,32 @@ class _AmbulanceTripProgressPageState extends State<AmbulanceTripProgressPage> {
 
   bool get _isComplete => _progress >= 1;
 
+  String get _statusTitle {
+    if (_progress >= 1) {
+      return 'Arrived at destination';
+    }
+    if (_progress >= 0.72) {
+      return 'Almost there';
+    }
+    if (_progress >= 0.36) {
+      return 'Ambulance OTW';
+    }
+    return 'Case accepted';
+  }
+
+  String get _statusMessage {
+    if (_progress >= 1) {
+      return 'The ambulance team has reached the EV user location. Press Arrived to continue with the scene update.';
+    }
+    if (_progress >= 0.72) {
+      return 'Approaching the EV user now. Keep the dashboard ready for the arrival update.';
+    }
+    if (_progress >= 0.36) {
+      return 'Unit ${widget.ambulanceUnit} is on the way to ${widget.destinationLabel}.';
+    }
+    return 'Dispatch confirmed. Preparing the ambulance team and sharing the route with the hospital dashboard.';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -122,11 +148,11 @@ class _AmbulanceTripProgressPageState extends State<AmbulanceTripProgressPage> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    const Center(
+                    Center(
                       child: Text(
-                        'Going to destination...',
+                        _statusTitle,
                         textAlign: TextAlign.center,
-                        style: TextStyle(
+                        style: const TextStyle(
                           color: _textPrimary,
                           fontSize: 26,
                           fontWeight: FontWeight.w900,
@@ -136,9 +162,7 @@ class _AmbulanceTripProgressPageState extends State<AmbulanceTripProgressPage> {
                     const SizedBox(height: 8),
                     Center(
                       child: Text(
-                        _isComplete
-                            ? 'Ambulance has reached the EV user location.'
-                            : 'Dispatch progress is being simulated for the emergency response demo.',
+                        _statusMessage,
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: _textMuted, height: 1.4),
                       ),
@@ -154,6 +178,57 @@ class _AmbulanceTripProgressPageState extends State<AmbulanceTripProgressPage> {
                       title: widget.driverLabel,
                       subtitle:
                           'Estimated travel time: ${widget.etaMinutes} min',
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF7FAF7),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE1EAE2)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE8F3E9),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.route_rounded,
+                              color: _brandGreen,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Dispatch status',
+                                  style: TextStyle(
+                                    color: _textPrimary,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  _statusTitle == 'Ambulance OTW'
+                                      ? 'Going there now'
+                                      : _statusTitle,
+                                  style: const TextStyle(
+                                    color: _textMuted,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 24),
                     ClipRRect(

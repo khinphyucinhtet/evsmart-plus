@@ -11,7 +11,8 @@ class AmbulanceDriverMessagesPage extends StatelessWidget {
       role: 'hospital',
       title: 'Ambulance Driver Messages',
       emptySubtitle:
-          'Driver hospital-assist chats will appear here as soon as a user selects a hospital or clinic from the map.',
+          'Driver hospital chats will appear here as soon as a user selects a nearby hospital or clinic from the map.',
+      showNearbyHospitalsShortcut: true,
     );
   }
 }

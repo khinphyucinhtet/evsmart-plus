@@ -12,6 +12,7 @@ import '../firebase_options.dart';
 import 'app_repository.dart';
 
 const String _notificationsEnabledKey = 'notifications_enabled';
+const String _impactAlertsEnabledKey = 'impact_alerts_enabled';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -174,6 +175,19 @@ class NotificationService {
     }
 
     if (!enabled) {
+      await _localNotifications.cancelAll();
+    }
+  }
+
+  static Future<bool> areImpactAlertsEnabled() async {
+    final preferences = await SharedPreferences.getInstance();
+    return preferences.getBool(_impactAlertsEnabledKey) ?? true;
+  }
+
+  static Future<void> setImpactAlertsEnabled(bool enabled) async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_impactAlertsEnabledKey, enabled);
+    if (!enabled && _supportsDeviceNotifications) {
       await _localNotifications.cancelAll();
     }
   }
@@ -416,6 +430,9 @@ class NotificationService {
     required double magnitude,
     required String body,
   }) async {
+    if (!await areNotificationsEnabled() || !await areImpactAlertsEnabled()) {
+      return;
+    }
     final label = AppRepository.severityLabel(level);
     await showLocalNotification(
       id: _stableNotificationId(

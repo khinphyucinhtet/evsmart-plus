@@ -13,7 +13,6 @@ class SupportPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ================= TITLE =================
               const Center(
                 child: Text(
                   "EVSmart Support Center",
@@ -25,10 +24,7 @@ class SupportPage extends StatelessWidget {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ================= INTRO =================
               const Text(
                 "Welcome to the EVSmart Support Center. We are here to assist you with any issues related to account management, charging services, and application usage.",
                 style: TextStyle(
@@ -37,14 +33,9 @@ class SupportPage extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ================= CONTACT INFO =================
               sectionTitle("Contact Information"),
-
               const SizedBox(height: 10),
-
               const Text(
                 "Email: support@evsmart.com\n"
                 "Phone: +60 12-3456789\n"
@@ -55,14 +46,9 @@ class SupportPage extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ================= COMMON ISSUES =================
               sectionTitle("Common Support Topics"),
-
               const SizedBox(height: 8),
-
               const Text(
                 "• Login and authentication problems\n"
                 "• Profile and account updates\n"
@@ -76,14 +62,9 @@ class SupportPage extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ================= SELF HELP =================
               sectionTitle("Self-Help Guidelines"),
-
               const SizedBox(height: 10),
-
               const Text(
                 "Before contacting support, we recommend users to ensure they are using the latest version of the application, check their internet connection, and restart the application if necessary.",
                 style: TextStyle(
@@ -92,14 +73,9 @@ class SupportPage extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ================= RESPONSE TIME =================
               sectionTitle("Response Time"),
-
               const SizedBox(height: 10),
-
               const Text(
                 "Our support team aims to respond to all inquiries within 24 working hours. Complex technical issues may require additional investigation time.",
                 style: TextStyle(
@@ -108,14 +84,9 @@ class SupportPage extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ================= EMERGENCY =================
               sectionTitle("Emergency Support"),
-
               const SizedBox(height: 10),
-
               const Text(
                 "For urgent charging failures or safety-related issues, please contact our emergency hotline immediately during operating hours.",
                 style: TextStyle(
@@ -124,10 +95,7 @@ class SupportPage extends StatelessWidget {
                   height: 1.6,
                 ),
               ),
-
               const SizedBox(height: 24),
-
-              // ================= FOOTER =================
               const Center(
                 child: Text(
                   "EVSmart Support Team\nCommitted to providing reliable and efficient service.",
@@ -142,7 +110,6 @@ class SupportPage extends StatelessWidget {
     );
   }
 
-  // ================= SECTION TITLE WIDGET =================
   static Widget sectionTitle(String text) {
     return Text(
       text,

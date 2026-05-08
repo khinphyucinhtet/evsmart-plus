@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/app_repository.dart';
-import '../services/gemini_ai_service.dart';
+import '../services/assist_directory.dart';
+import '../services/gemini_service.dart';
+import '../services/voice_assistant_service.dart';
 import 'alert.dart';
 import 'change_password.dart';
 import 'charge.dart';
@@ -24,7 +26,14 @@ import 'user_message.dart';
 import 'view_profile.dart';
 
 class GlobalSearchHandler {
-  static const MethodChannel platform = MethodChannel('voice_channel');
+  static const Map<String, String> _recommendedAmbulanceDriver = {
+    'id': 'ambulance_zarul',
+    'name': 'Zarul',
+    'role': 'Nearby ambulance driver',
+    'phone': '+60123456789',
+    'vehicle': 'Unit AMB-204',
+    'eta': '6 mins',
+  };
 
   static Future<void> startVoice(
     BuildContext context,
@@ -34,7 +43,7 @@ class GlobalSearchHandler {
   ) async {
     try {
       onStart();
-      final result = await platform.invokeMethod('startVoice');
+      final result = await VoiceAssistantService.listenForSingleCommand();
       onStop();
 
       if (!context.mounted) {
@@ -42,16 +51,19 @@ class GlobalSearchHandler {
       }
       if (result != null && result.toString().isNotEmpty) {
         onResult(result.toString());
+        return;
       }
     } catch (_) {
       onStop();
-      if (!context.mounted) {
-        return;
-      }
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Voice not available')));
     }
+
+    if (!context.mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Voice not available')));
   }
 
   static Future<void> handleSearch(BuildContext context, String key) async {
@@ -61,13 +73,26 @@ class GlobalSearchHandler {
       return;
     }
 
+    if (_matchesAny(key, [
+      'call ambulance',
+      'find ambulance',
+      'nearby ambulance',
+      'ambulance driver',
+      'send ambulance',
+      'need ambulance',
+      'contact ambulance',
+    ])) {
+      await _showNearbyAmbulanceLookup(context);
+      return;
+    }
+
     if (key.contains('help') ||
         key.contains('assist') ||
         key.contains('emergency') ||
         key.contains('accident') ||
         key.contains('need assistance') ||
         key.contains('i need help')) {
-      _showEmergencyVoiceCountdown(context);
+      await _showNearbyAmbulanceLookup(context);
       return;
     }
 
@@ -257,7 +282,7 @@ class GlobalSearchHandler {
       return;
     }
 
-    final aiIntent = await GeminiAiService.voiceCommandIntent(key);
+    final aiIntent = await GeminiService.voiceCommandIntent(key);
     if (!context.mounted) {
       return;
     }
@@ -265,14 +290,16 @@ class GlobalSearchHandler {
       return;
     }
 
-    final aiReply = await GeminiAiService.voiceSearchReply(key);
+    final aiReply = await GeminiService.voiceSearchReply(key);
     if (!context.mounted) {
       return;
     }
 
+    final spokenReply = aiReply ?? 'Command not recognized';
+    unawaited(VoiceAssistantService.speak(spokenReply));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(aiReply ?? 'Command not recognized'),
+        content: Text(spokenReply),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -293,6 +320,7 @@ class GlobalSearchHandler {
       if (reply == null || reply.isEmpty) {
         return;
       }
+      unawaited(VoiceAssistantService.speak(reply));
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(reply), duration: const Duration(seconds: 3)),
       );
@@ -426,7 +454,7 @@ class GlobalSearchHandler {
         return true;
       case 'emergency_help':
         showReply();
-        _showEmergencyVoiceCountdown(context);
+        unawaited(_showNearbyAmbulanceLookup(context));
         return true;
       default:
         return false;
@@ -434,9 +462,7 @@ class GlobalSearchHandler {
   }
 
   static bool _handleFunKeywords(BuildContext context, String key) {
-    if (key.contains('zarul') ||
-        key.contains('zarulll') ||
-        key.contains('bangla') ||
+    if (key.contains('bangla') ||
         key.contains('bangladeshii') ||
         key.contains('sorrow')) {
       _showSimplePopup(context, 'STUPID', 'Zarul The Bangladeshii');
@@ -503,75 +529,83 @@ class GlobalSearchHandler {
     );
   }
 
-  static Future<void> _showEmergencyVoiceCountdown(BuildContext context) async {
-    int seconds = 10;
-    bool cancelled = false;
-    Timer? timer;
+  static Future<void> _showNearbyAmbulanceLookup(BuildContext context) async {
+    final nearestHospital = await _nearestHospitalName();
+    if (!context.mounted) {
+      return;
+    }
 
+    Timer? progressTimer;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (dialogContext) {
+      builder: (_) {
+        double progress = 0;
         return StatefulBuilder(
           builder: (dialogContext, setState) {
-            timer ??= Timer.periodic(const Duration(seconds: 1), (value) async {
-              if (seconds == 0) {
-                value.cancel();
-                if (Navigator.of(dialogContext).canPop()) {
-                  Navigator.of(dialogContext).pop();
-                }
-                await _sendVoiceEmergencyAlert(context);
-                return;
-              }
-
-              seconds -= 1;
+            progressTimer ??= Timer.periodic(const Duration(milliseconds: 85), (
+              timer,
+            ) {
+              progress = (progress + 0.04).clamp(0.0, 1.0);
               if (dialogContext.mounted) {
                 setState(() {});
+              }
+              if (progress >= 1) {
+                timer.cancel();
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop();
+                }
               }
             });
 
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+              ),
               title: const Text(
-                'Potential accident detected. Cancel if safe.',
-                style: TextStyle(fontWeight: FontWeight.bold),
+                'Searching Nearby Ambulance',
+                textAlign: TextAlign.center,
               ),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text(
-                    'Voice emergency command received. Level 5 SOS will be sent unless this was accidental.',
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Emergency services will be notified in $seconds seconds.',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+                    'Checking registered ambulance drivers near your location.',
+                    textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
                   LinearProgressIndicator(
-                    value: seconds / 10,
+                    value: progress,
+                    minHeight: 10,
                     backgroundColor: Colors.grey.shade300,
                     valueColor: const AlwaysStoppedAnimation(Color(0xFF2E7D32)),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    'This uses the same emergency Firebase flow as Level 4/5 impact alerts.',
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  Text(
+                    '${(progress * 100).round()}%',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Nearest hospital route: $nearestHospital',
                     textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black54),
                   ),
                 ],
               ),
               actions: [
-                TextButton(
-                  onPressed: () {
-                    cancelled = true;
-                    timer?.cancel();
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(
-                      color: Color(0xFF2E7D32),
-                      fontWeight: FontWeight.bold,
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      progressTimer?.cancel();
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: const Text(
+                      'Close',
+                      style: TextStyle(
+                        color: Color(0xFF2E7D32),
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ),
@@ -581,16 +615,178 @@ class GlobalSearchHandler {
         );
       },
     );
+    progressTimer?.cancel();
 
-    timer?.cancel();
-    if (cancelled && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Emergency voice request cancelled.')),
-      );
+    if (!context.mounted) {
+      return;
     }
+    await _showAmbulanceFoundPopup(context, nearestHospital: nearestHospital);
   }
 
-  static Future<void> _sendVoiceEmergencyAlert(BuildContext context) async {
+  static Future<void> _showAmbulanceFoundPopup(
+    BuildContext context, {
+    required String nearestHospital,
+  }) async {
+    final driverName = _recommendedAmbulanceDriver['name'] ?? 'Zarul';
+    final phone = _recommendedAmbulanceDriver['phone'] ?? '';
+    final role =
+        _recommendedAmbulanceDriver['role'] ?? 'Nearby ambulance driver';
+    final eta = _recommendedAmbulanceDriver['eta'] ?? '6 mins';
+    final vehicle = _recommendedAmbulanceDriver['vehicle'] ?? 'Unit AMB-204';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        contentPadding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+        title: const Text('Ambulance Driver Found'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              driverName,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 4),
+            Text('$role • $vehicle'),
+            const SizedBox(height: 10),
+            Text('ETA: $eta'),
+            Text('Hospital route: $nearestHospital'),
+            Text('Contact: $phone'),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      Navigator.of(dialogContext).pop();
+                      await _openAmbulanceConversation(
+                        context,
+                        driverName: driverName,
+                        phone: phone,
+                        nearestHospital: nearestHospital,
+                      );
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF2E7D32),
+                      side: const BorderSide(color: Color(0xFF2E7D32)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Message'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () async {
+                      Navigator.of(dialogContext).pop();
+                      await _launchPhoneCall(phone);
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF2E7D32),
+                      side: const BorderSide(color: Color(0xFF2E7D32)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Call'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(46),
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF2E7D32),
+                      side: const BorderSide(color: Color(0xFF2E7D32)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(22),
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                    child: const FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text('Close'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Future<void> _openAmbulanceConversation(
+    BuildContext context, {
+    required String driverName,
+    required String phone,
+    required String nearestHospital,
+  }) async {
+    final locationName = await _currentLocationLabel();
+    final threadId = await AppRepository.startAssistanceConversation(
+      responderRole: 'hospital',
+      responderId: _recommendedAmbulanceDriver['id'],
+      responderName: '$driverName Ambulance',
+      responderPhone: phone,
+      locationName: locationName,
+      issueLabel: 'Nearby ambulance support',
+      initialMessage:
+          'Need ambulance support near $locationName. Recommended nearby driver: $driverName. Hospital route: $nearestHospital.',
+      autoDispatch: true,
+    );
+
+    if (!context.mounted) {
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserMessagePage(initialThreadId: threadId),
+      ),
+    );
+  }
+
+  static Future<String> _nearestHospitalName() async {
+    double latitude = 3.1390;
+    double longitude = 101.6869;
+    try {
+      final position = await Geolocator.getCurrentPosition();
+      latitude = position.latitude;
+      longitude = position.longitude;
+    } catch (_) {}
+
+    final nearestHospital = AssistDirectory.nearestProvider(
+      AssistDirectory.healthProviders,
+      latitude: latitude,
+      longitude: longitude,
+    );
+    return nearestHospital?['name']?.toString() ?? 'Nearest hospital dispatch';
+  }
+
+  static Future<String> _currentLocationLabel() async {
     double latitude = 3.1390;
     double longitude = 101.6869;
     try {
@@ -601,32 +797,13 @@ class GlobalSearchHandler {
 
     final locationName = AppRepository.inferLocationName(latitude, longitude);
     final roadName = AppRepository.inferRoadName(latitude, longitude);
+    return '$locationName - $roadName';
+  }
 
-    await AppRepository.sendManualAlert(
-      impactLevel: 5,
-      vehicleStatus:
-          'Voice SOS requested. Driver asked for emergency help through EVSmart+ voice command.',
-      latitude: latitude,
-      longitude: longitude,
-      emergencyTriggered: true,
-      sourceDetail: 'voice_command',
-      title: 'Voice emergency SOS',
-      accidentStatus: 'Critical emergency response required',
-      extraData: {
-        'gps_location':
-            '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}',
-        'location': '$locationName - $roadName',
-        'impact_detected_by': 'Voice command emergency trigger',
-      },
-    );
-
-    if (!context.mounted) {
-      return;
+  static Future<void> _launchPhoneCall(String phone) async {
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Level 5 voice SOS sent to hospital dashboard.'),
-      ),
-    );
   }
 }

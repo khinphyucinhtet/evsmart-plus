@@ -7,15 +7,17 @@ import 'package:flutter/material.dart';
 import 'firebase_options.dart';
 import 'services/android_background_impact_service.dart';
 import 'services/notification_service.dart';
+import 'services/web_monitoring_service.dart';
 import 'screens/dashboard_router.dart';
 import 'screens/splash_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (kIsWeb) {
+    await WebMonitoringService.load();
+  }
 
   runApp(const EVSmartPlus());
 }
@@ -27,8 +29,7 @@ class EVSmartPlus extends StatefulWidget {
   State<EVSmartPlus> createState() => _EVSmartPlusState();
 }
 
-class _EVSmartPlusState extends State<EVSmartPlus>
-    with WidgetsBindingObserver {
+class _EVSmartPlusState extends State<EVSmartPlus> with WidgetsBindingObserver {
   bool _backgroundServiceActive = false;
 
   @override
@@ -108,7 +109,8 @@ class _EVSmartPlusState extends State<EVSmartPlus>
           primary: const Color(0xFF2E7D32),
         ),
       ),
-      home: kIsWeb ? const DashboardRouter() : const SplashScreen(),
+      routes: {'/dashboard': (_) => const DashboardRouter()},
+      home: const SplashScreen(),
     );
   }
 }

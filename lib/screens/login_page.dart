@@ -151,7 +151,6 @@ class _LoginPageState extends State<LoginPage> {
       uid: uid,
       role: role,
     );
-
     await redirectByRole(role);
   }
 

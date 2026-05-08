@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 
 import '../services/app_repository.dart';
 import '../services/impact_detection_service.dart';
+import 'app_footer.dart';
 import 'app_header.dart';
 import 'charge.dart';
 import 'global_search.dart';
@@ -22,7 +23,6 @@ class _AlertPageState extends State<AlertPage> {
   static const Color _primaryGreen = Color(0xFF2E7D32);
   static const Color _surface = Color(0xFFF3F4F6);
 
-  int selectedTab = 2;
   String _statusMessage = 'Monitoring active';
   bool _showingImpactDialog = false;
   bool _accidentDetectionEnabled = true;
@@ -126,7 +126,7 @@ class _AlertPageState extends State<AlertPage> {
           : 'Impact logged successfully';
     });
 
-    _showImpactSyncResult(
+    await _showImpactSyncResult(
       emergencyTriggered,
       alert['impact_label']?.toString() ?? _severityTitle(impactLevel),
     );
@@ -241,8 +241,11 @@ class _AlertPageState extends State<AlertPage> {
     }
   }
 
-  void _showImpactSyncResult(bool emergencyTriggered, String severityLabel) {
-    showDialog<void>(
+  Future<void> _showImpactSyncResult(
+    bool emergencyTriggered,
+    String severityLabel,
+  ) async {
+    await showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
         title: Text(emergencyTriggered ? 'Help is on the way' : 'Alert logged'),
@@ -1442,12 +1445,9 @@ class _AlertPageState extends State<AlertPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomSystem = MediaQuery.of(context).padding.bottom;
-
     return Scaffold(
       backgroundColor: _surface,
       body: SafeArea(
-        bottom: false,
         child: Column(
           children: [
             AppHeader(
@@ -1457,12 +1457,12 @@ class _AlertPageState extends State<AlertPage> {
             ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildTopOverview(),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     Expanded(child: _buildImpactClassificationCard()),
                   ],
                 ),
@@ -1471,8 +1471,46 @@ class _AlertPageState extends State<AlertPage> {
           ],
         ),
       ),
-      bottomNavigationBar: buildBottomNav(bottomSystem),
+      bottomNavigationBar: AppFooter(
+        currentIndex: 2,
+        onTap: _handleFooterTap,
+        activeColor: _primaryGreen,
+      ),
     );
+  }
+
+  void _handleFooterTap(int index) {
+    if (index == 2) {
+      return;
+    }
+
+    if (index == 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DriverHomePage()),
+      );
+    }
+
+    if (index == 1) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const ChargePage()),
+      );
+    }
+
+    if (index == 3) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const NotificationPage()),
+      );
+    }
+
+    if (index == 4) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const RewardsPage()),
+      );
+    }
   }
 
   Widget _buildTopOverview() {
@@ -1640,7 +1678,7 @@ class _AlertPageState extends State<AlertPage> {
   Widget _buildImpactClassificationCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
@@ -1677,7 +1715,7 @@ class _AlertPageState extends State<AlertPage> {
               height: 1.35,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
@@ -1685,9 +1723,9 @@ class _AlertPageState extends State<AlertPage> {
                 final hubWidth = constraints.maxWidth < 374
                     ? constraints.maxWidth
                     : 374.0;
-                final hubHeight = constraints.maxHeight < 372
+                final hubHeight = constraints.maxHeight < 360
                     ? constraints.maxHeight
-                    : 372.0;
+                    : 360.0;
                 final nodeWidth = (hubWidth - nodeGap) / 2;
                 final nodeHeight = (hubHeight - nodeGap) / 2;
                 final centerSize = hubWidth < 350 ? 146.0 : 156.0;
@@ -1822,90 +1860,6 @@ class _AlertPageState extends State<AlertPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget buildBottomNav(double bottomSystem) {
-    return Container(
-      height: 88 + bottomSystem,
-      padding: EdgeInsets.only(top: 8, bottom: bottomSystem + 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(blurRadius: 12, color: Colors.black12)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          buildTab(Icons.home, 'Home', 0),
-          buildTab(Icons.ev_station, 'Charge', 1),
-          buildTab(Icons.warning, 'Alert', 2),
-          buildTab(Icons.notifications, 'Noti', 3),
-          buildTab(Icons.card_giftcard, 'Rewards', 4),
-        ],
-      ),
-    );
-  }
-
-  Widget buildTab(IconData icon, String label, int index) {
-    final isActive = selectedTab == index;
-
-    return GestureDetector(
-      onTap: () {
-        if (index == 2) {
-          return;
-        }
-
-        if (index == 0) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DriverHomePage()),
-          );
-        }
-
-        if (index == 1) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const ChargePage()),
-          );
-        }
-
-        if (index == 3) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const NotificationPage()),
-          );
-        }
-
-        if (index == 4) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const RewardsPage()),
-          );
-        }
-      },
-      child: Container(
-        width: 70,
-        decoration: isActive
-            ? BoxDecoration(
-                color: _primaryGreen.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              )
-            : null,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 24, color: isActive ? _primaryGreen : Colors.grey),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: isActive ? _primaryGreen : Colors.grey,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

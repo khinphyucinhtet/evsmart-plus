@@ -19,6 +19,8 @@ class ConversationThreadPanel extends StatefulWidget {
     this.onToggleSelection,
     this.onPickImage,
     this.isUploadingImage = false,
+    this.quickReplies = const <String>[],
+    this.onQuickReply,
   });
 
   final Map<String, dynamic>? conversation;
@@ -34,6 +36,8 @@ class ConversationThreadPanel extends StatefulWidget {
   final void Function(String messageId)? onToggleSelection;
   final Future<void> Function()? onPickImage;
   final bool isUploadingImage;
+  final List<String> quickReplies;
+  final Future<void> Function(String value)? onQuickReply;
 
   @override
   State<ConversationThreadPanel> createState() =>
@@ -222,92 +226,131 @@ class _ConversationThreadPanelState extends State<ConversationThreadPanel> {
                 14,
                 MediaQuery.of(context).viewInsets.bottom > 0 ? 8 : 14,
               ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (widget.onPickImage != null)
+                  if (widget.quickReplies.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(right: 8, bottom: 2),
-                      child: SizedBox(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: widget.quickReplies
+                              .map(
+                                (reply) => ActionChip(
+                                  label: Text(reply),
+                                  onPressed:
+                                      widget.selectionMode ||
+                                          _isSending ||
+                                          widget.onQuickReply == null
+                                      ? null
+                                      : () => widget.onQuickReply!(reply),
+                                  backgroundColor: const Color(0xFFF0F4F1),
+                                  side: BorderSide(
+                                    color: widget.accentColor.withValues(
+                                      alpha: 0.25,
+                                    ),
+                                  ),
+                                  labelStyle: TextStyle(
+                                    color: widget.accentColor,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (widget.onPickImage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8, bottom: 2),
+                          child: SizedBox(
+                            height: 48,
+                            width: 48,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFF0F4F1),
+                                foregroundColor: widget.accentColor,
+                                shape: const CircleBorder(),
+                                padding: EdgeInsets.zero,
+                                elevation: 0,
+                              ),
+                              onPressed:
+                                  widget.selectionMode ||
+                                      widget.isUploadingImage ||
+                                      _isSending
+                                  ? null
+                                  : widget.onPickImage,
+                              child: widget.isUploadingImage
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: widget.accentColor,
+                                      ),
+                                    )
+                                  : const Icon(Icons.photo_camera_outlined),
+                            ),
+                          ),
+                        ),
+                      Expanded(
+                        child: TextField(
+                          controller: _messageController,
+                          enabled: !widget.selectionMode,
+                          minLines: 1,
+                          maxLines: 6,
+                          textInputAction: TextInputAction.newline,
+                          decoration: InputDecoration(
+                            hintText: widget.selectionMode
+                                ? 'Selection mode active'
+                                : widget.onPickImage != null
+                                ? 'Type a message or send a vehicle photo...'
+                                : 'Type a message...',
+                            filled: true,
+                            fillColor: const Color(0xFFF7F8FA),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(18),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
                         height: 48,
                         width: 48,
                         child: ElevatedButton(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFF0F4F1),
-                            foregroundColor: widget.accentColor,
+                            backgroundColor: widget.accentColor,
                             shape: const CircleBorder(),
                             padding: EdgeInsets.zero,
-                            elevation: 0,
                           ),
-                          onPressed:
-                              widget.selectionMode ||
-                                  widget.isUploadingImage ||
-                                  _isSending
+                          onPressed: widget.selectionMode || _isSending
                               ? null
-                              : widget.onPickImage,
-                          child: widget.isUploadingImage
-                              ? SizedBox(
+                              : _send,
+                          child: _isSending
+                              ? const SizedBox(
                                   width: 18,
                                   height: 18,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
-                                    color: widget.accentColor,
+                                    color: Colors.white,
                                   ),
                                 )
-                              : const Icon(Icons.photo_camera_outlined),
+                              : const Icon(Icons.send, color: Colors.white),
                         ),
                       ),
-                    ),
-                  Expanded(
-                    child: TextField(
-                      controller: _messageController,
-                      enabled: !widget.selectionMode,
-                      minLines: 1,
-                      maxLines: 6,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: widget.selectionMode
-                            ? 'Selection mode active'
-                            : widget.onPickImage != null
-                            ? 'Type a message or send a vehicle photo...'
-                            : 'Type a message...',
-                        filled: true,
-                        fillColor: const Color(0xFFF7F8FA),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(18),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    height: 48,
-                    width: 48,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: widget.accentColor,
-                        shape: const CircleBorder(),
-                        padding: EdgeInsets.zero,
-                      ),
-                      onPressed: widget.selectionMode || _isSending
-                          ? null
-                          : _send,
-                      child: _isSending
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.send, color: Colors.white),
-                    ),
+                    ],
                   ),
                 ],
               ),

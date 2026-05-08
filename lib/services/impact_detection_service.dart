@@ -42,6 +42,9 @@ class ImpactDetectionService {
   bool _started = false;
 
   void start() {
+    if (kIsWeb) {
+      return;
+    }
     if (_started) {
       return;
     }
@@ -130,6 +133,18 @@ class ImpactDetectionService {
     }
     final preferences = await SharedPreferences.getInstance();
     return preferences.getBool(_backgroundAlertsEnabledKey) ?? false;
+  }
+
+  static Future<void> setBackgroundAlertsEnabled(
+    bool enabled, {
+    bool markPrompted = true,
+  }) async {
+    if (kIsWeb) {
+      return;
+    }
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool(_backgroundAlertsEnabledKey, enabled);
+    await preferences.setBool(_backgroundPromptedKey, markPrompted && enabled);
   }
 
   static void _onEvent(AccelerometerEvent event) {

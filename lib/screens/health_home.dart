@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -6,9 +8,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/app_repository.dart';
 import '../services/assist_directory.dart';
 import 'ambulance_driver_messages.dart';
+import 'ambulance_response_form_page.dart';
 import 'ambulance_trip_progress.dart';
-import 'ambulance_profile.dart';
-import 'dashboard_ambulance_driver.dart';
 import 'menu.dart';
 import 'message_conversation_page.dart';
 
@@ -30,8 +31,10 @@ class _HealthHomePageState extends State<HealthHomePage> {
   Map<String, dynamic> _profile = const <String, dynamic>{};
   String _currentLocationLabel = 'Fetching current location';
   Position? _currentPosition;
+  StreamSubscription<Position>? _positionSubscription;
   String? _activeAlertId;
   String _activeCaseStatus = 'Available';
+  bool _isResponderAvailable = true;
   int _reportsSubmitted = 0;
   String _latestUpdate = 'Waiting for the next emergency alert.';
   bool _isRefreshing = false;
@@ -41,12 +44,19 @@ class _HealthHomePageState extends State<HealthHomePage> {
   DateTime? _selectedLogDate;
   bool _selectionMode = false;
   bool _isHospitalDispatchPopupVisible = false;
+  bool _isCaseTransitionInProgress = false;
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
     _captureCurrentLocation();
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadProfile() async {
@@ -66,8 +76,10 @@ class _HealthHomePageState extends State<HealthHomePage> {
 
     setState(() {
       _profile = data;
-      _currentLocationLabel =
-          data['current_location']?.toString() ?? _currentLocationLabel;
+      if (_currentPosition == null) {
+        _currentLocationLabel =
+            data['current_location']?.toString() ?? _currentLocationLabel;
+      }
     });
   }
 
@@ -84,37 +96,88 @@ class _HealthHomePageState extends State<HealthHomePage> {
       }
       if (permission == LocationPermission.denied ||
           permission == LocationPermission.deniedForever) {
+        await _positionSubscription?.cancel();
+        _positionSubscription = null;
         if (!mounted) {
           return;
         }
         setState(() {
+          _currentPosition = null;
           _currentLocationLabel = 'Location permission is required';
         });
         return;
       }
 
       final position = await Geolocator.getCurrentPosition();
-      final locationName = AppRepository.inferLocationName(
-        position.latitude,
-        position.longitude,
-      );
+      _ensureLocationTracking();
+      await _syncCurrentLocation(position, uid: uid);
+    } catch (_) {}
+  }
 
-      await AppRepository.upsertAmbulanceProfile(uid, {
+  void _ensureLocationTracking() {
+    if (_positionSubscription != null) {
+      return;
+    }
+
+    const locationSettings = LocationSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: 50,
+    );
+
+    _positionSubscription =
+        Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (position) {
+            unawaited(_syncCurrentLocation(position));
+          },
+        );
+  }
+
+  Future<void> _syncCurrentLocation(Position position, {String? uid}) async {
+    final resolvedUid = uid ?? FirebaseAuth.instance.currentUser?.uid;
+    if (resolvedUid == null) {
+      return;
+    }
+
+    final locationName = AppRepository.inferLocationName(
+      position.latitude,
+      position.longitude,
+    );
+    final previousPosition = _currentPosition;
+    final movedFarEnough =
+        previousPosition == null ||
+        Geolocator.distanceBetween(
+              previousPosition.latitude,
+              previousPosition.longitude,
+              position.latitude,
+              position.longitude,
+            ) >=
+            50;
+    final locationChanged = locationName != _currentLocationLabel;
+
+    if (!movedFarEnough && !locationChanged) {
+      return;
+    }
+
+    await AppRepository.upsertAmbulanceProfile(resolvedUid, {
+      'current_location': locationName,
+      'current_latitude': position.latitude,
+      'current_longitude': position.longitude,
+    });
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _currentPosition = position;
+      _currentLocationLabel = locationName;
+      _profile = <String, dynamic>{
+        ..._profile,
         'current_location': locationName,
         'current_latitude': position.latitude,
         'current_longitude': position.longitude,
-      });
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _currentPosition = position;
-        _currentLocationLabel = locationName;
-      });
-      _loadProfile();
-    } catch (_) {}
+      };
+    });
   }
 
   Future<void> _updateAlert(String alertId, Map<String, dynamic> data) async {
@@ -138,7 +201,7 @@ class _HealthHomePageState extends State<HealthHomePage> {
     if (!mounted) {
       return;
     }
-    await Future<void>.delayed(const Duration(milliseconds: 320));
+    await Future<void>.delayed(const Duration(milliseconds: 180));
   }
 
   Future<void> _callEvUser(Map<String, dynamic> alert) async {
@@ -200,21 +263,6 @@ class _HealthHomePageState extends State<HealthHomePage> {
         ),
         title: const Text('EVSmart+', style: TextStyle(color: Colors.white)),
         actions: [
-          IconButton(
-            tooltip: 'Open ambulance dashboard',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const DashboardAmbulanceDriverPage(),
-                ),
-              );
-            },
-            icon: const Icon(
-              Icons.dashboard_customize_rounded,
-              color: Colors.white,
-            ),
-          ),
           StreamBuilder<int>(
             stream: AppRepository.streamUnreadBadgeCount('hospital'),
             builder: (context, snapshot) {
@@ -262,16 +310,6 @@ class _HealthHomePageState extends State<HealthHomePage> {
               );
             },
           ),
-          IconButton(
-            onPressed: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const AmbulanceProfilePage()),
-              );
-              _loadProfile();
-            },
-            icon: const Icon(Icons.person, color: Colors.white),
-          ),
         ],
       ),
       body: StreamBuilder<List<Map<String, dynamic>>>(
@@ -284,20 +322,24 @@ class _HealthHomePageState extends State<HealthHomePage> {
           );
           final nearbyAlerts = _filterNearbyAlerts(alerts);
           final activeAlert = _resolveActiveAlert(nearbyAlerts);
-          final feedAlerts = nearbyAlerts
+          final visibleNearbyAlerts = _isResponderAvailable
+              ? nearbyAlerts
+              : const <Map<String, dynamic>>[];
+          final visibleActiveAlert = _isResponderAvailable ? activeAlert : null;
+          final feedAlerts = visibleNearbyAlerts
               .where((alert) {
                 final alertId = _alertId(alert);
                 return alertId != _activeAlertId &&
                     !_hiddenAlertIds.contains(alertId);
               })
               .toList(growable: false);
-          final hospitalDispatchAlert = _firstPendingHospitalDispatchAlert(
-            nearbyAlerts,
-          );
+          final hospitalDispatchAlert = _isResponderAvailable
+              ? _firstPendingHospitalDispatchAlert(visibleNearbyAlerts)
+              : null;
           final accidentNotifications = feedAlerts
               .where((alert) => _impactLevel(alert) >= 3)
               .toList(growable: false);
-          final logAlerts = _filteredLogAlerts(nearbyAlerts);
+          final logAlerts = _filteredLogAlerts(visibleNearbyAlerts);
           _maybeShowHospitalDispatchPopup(hospitalDispatchAlert);
 
           return RefreshIndicator(
@@ -307,65 +349,68 @@ class _HealthHomePageState extends State<HealthHomePage> {
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
               children: [
                 _buildLocationBanner(
-                  nearbyCount: accidentNotifications.length,
-                  activeAlert: activeAlert,
+                  nearbyAlerts: visibleNearbyAlerts,
+                  allAlerts: alerts,
+                  activeAlert: visibleActiveAlert,
                 ),
-                const SizedBox(height: 14),
-                _buildSectionCard(
-                  title: 'NEARBY ACCIDENT NOTIFICATIONS',
-                  icon: Icons.notification_important_rounded,
-                  trailing: _buildRefreshButton(),
-                  child: accidentNotifications.isEmpty
-                      ? _buildEmptyPanel(
-                          title: 'No severe accident nearby',
-                          subtitle:
-                              'Level 3 check-first cases and Level 4/5 emergency cases near your ambulance location will appear here first.',
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Level 3 cases are for contact/check first. Level 4 and Level 5 cases are emergency aid cases and require the ambulance response form.',
-                              style: TextStyle(
-                                color: _textMuted,
-                                fontWeight: FontWeight.w700,
-                                height: 1.35,
+                if (_isResponderAvailable) ...[
+                  const SizedBox(height: 14),
+                  _buildSectionCard(
+                    title: 'ACTIVE CASE',
+                    icon: Icons.local_shipping_rounded,
+                    child: visibleActiveAlert == null
+                        ? _buildEmptyPanel(
+                            title: 'No active case',
+                            subtitle:
+                                'Accept a Level 4 or Level 5 emergency and it will move here automatically.',
+                          )
+                        : _buildActiveCaseCard(visibleActiveAlert),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildSectionCard(
+                    title: 'NEARBY ACCIDENT NOTIFICATIONS',
+                    icon: Icons.notification_important_rounded,
+                    trailing: _buildRefreshButton(),
+                    child: accidentNotifications.isEmpty
+                        ? _buildEmptyPanel(
+                            title: 'No severe accident nearby',
+                            subtitle:
+                                'Level 3 check-first cases and Level 4/5 emergency cases near your ambulance location will appear here first.',
+                          )
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Level 3 cases are for contact/check first. Level 4 and Level 5 cases are emergency aid cases and require the ambulance response form.',
+                                style: TextStyle(
+                                  color: _textMuted,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.35,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildFeedSelectionToolbar(accidentNotifications),
-                            const SizedBox(height: 12),
-                            ...accidentNotifications.map(_buildEmergencyCard),
-                          ],
-                        ),
-                ),
-                const SizedBox(height: 14),
-                _buildSectionCard(
-                  title: 'ACTIVE CASE',
-                  icon: Icons.local_shipping_rounded,
-                  child: activeAlert == null
-                      ? _buildEmptyPanel(
-                          title: 'No active case',
-                          subtitle:
-                              'Accept a Level 4 or Level 5 emergency and it will move here automatically.',
-                        )
-                      : _buildActiveCaseCard(activeAlert),
-                ),
-                const SizedBox(height: 14),
-                _buildSectionCard(
-                  title: 'AMBULANCE CASE LOG',
-                  icon: Icons.fact_check_rounded,
-                  child: logAlerts.isEmpty
-                      ? _buildEmptyPanel(
-                          title: 'No case history yet',
-                          subtitle:
-                              'Accepted, declined, and submitted accident cases will remain visible here for demo review.',
-                        )
-                      : _buildDashboardLogPanel(
-                          allAlerts: nearbyAlerts,
-                          visibleLogs: logAlerts,
-                        ),
-                ),
+                              const SizedBox(height: 12),
+                              _buildFeedSelectionToolbar(accidentNotifications),
+                              const SizedBox(height: 12),
+                              ...accidentNotifications.map(_buildEmergencyCard),
+                            ],
+                          ),
+                  ),
+                  const SizedBox(height: 14),
+                  _buildSectionCard(
+                    title: 'AMBULANCE CASE LOG',
+                    icon: Icons.fact_check_rounded,
+                    child: logAlerts.isEmpty
+                        ? _buildEmptyPanel(
+                            title: 'No case history yet',
+                            subtitle:
+                                'Accepted, declined, and submitted accident cases will remain visible here for demo review.',
+                          )
+                        : _buildDashboardLogPanel(
+                            allAlerts: visibleNearbyAlerts,
+                            visibleLogs: logAlerts,
+                          ),
+                  ),
+                ],
               ],
             ),
           );
@@ -453,11 +498,14 @@ class _HealthHomePageState extends State<HealthHomePage> {
 
     await _updateAlert(alertId, updateData);
 
+    final ambulanceLocation = _currentLocationLabel.trim().isEmpty
+        ? 'the nearest ambulance standby point'
+        : _currentLocationLabel.trim();
     final autoMessage = responseForm == null
         ? level >= 4
               ? 'Emergency team is reviewing your alert. Stay calm.'
               : 'We are reviewing your alert and will update you in chat shortly.'
-        : 'Ambulance is on the way. ETA ${responseForm['eta_minutes']} min. Unit ${responseForm['ambulance_unit']} has accepted the case.';
+        : 'Help is on the way. ${responseForm['ambulance_unit']} accepted your case and is coming from $ambulanceLocation with ETA ${responseForm['eta_minutes']} min. Keep your phone nearby and stay visible if it is safe.';
 
     if (responseForm != null) {
       await AppRepository.pushDashboardNotification(
@@ -507,194 +555,11 @@ class _HealthHomePageState extends State<HealthHomePage> {
     );
   }
 
-  Future<Map<String, dynamic>?> _showGoingResponseForm(
-    Map<String, dynamic> alert,
-  ) async {
-    final formKey = GlobalKey<FormState>();
-    final etaController = TextEditingController(text: '8');
-    final unitController = TextEditingController(
-      text:
-          _profile['ambulance_unit']?.toString() ??
-          _profile['vehicle_number']?.toString() ??
-          'AMB-01',
-    );
-    final contactController = TextEditingController(
-      text:
-          _profile['contact_number']?.toString() ??
-          _profile['phone']?.toString() ??
-          '',
-    );
-    final teamController = TextEditingController(text: '2');
-    final notesController = TextEditingController(
-      text:
-          'Ambulance team accepted the nearby emergency and is preparing to move.',
-    );
-
-    final result = await showDialog<Map<String, dynamic>>(
-      context: context,
-      useRootNavigator: true,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(26),
-          ),
-          title: const Text(
-            'Going to accident?',
-            style: TextStyle(fontWeight: FontWeight.w900),
-          ),
-          content: SizedBox(
-            width: 430,
-            child: SingleChildScrollView(
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Fill this quick ambulance response form. It will be sent to the hospital dashboard as a live notification.',
-                      style: TextStyle(color: _textMuted, height: 1.4),
-                    ),
-                    const SizedBox(height: 14),
-                    _buildInfoRow(
-                      icon: Icons.location_on_rounded,
-                      value: _locationText(alert),
-                      color: _textPrimary,
-                    ),
-                    const SizedBox(height: 6),
-                    _buildInfoRow(
-                      icon: Icons.warning_amber_rounded,
-                      value:
-                          '${_severityHeadline(_impactLevel(alert))} - ${AppRepository.severityExplanation(_impactLevel(alert))}',
-                      color: _textMuted,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: etaController,
-                      keyboardType: TextInputType.number,
-                      decoration: _responseInputDecoration(
-                        'Estimated arrival time',
-                        suffixText: 'minutes',
-                      ),
-                      validator: (value) {
-                        final eta = int.tryParse(value?.trim() ?? '');
-                        if (eta == null || eta <= 0) {
-                          return 'Enter ETA in minutes.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: unitController,
-                      decoration: _responseInputDecoration('Ambulance unit'),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Enter ambulance unit.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: contactController,
-                      keyboardType: TextInputType.phone,
-                      decoration: _responseInputDecoration('Contact number'),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Enter contact number.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: teamController,
-                      keyboardType: TextInputType.number,
-                      decoration: _responseInputDecoration('Team size'),
-                      validator: (value) {
-                        final size = int.tryParse(value?.trim() ?? '');
-                        if (size == null || size <= 0) {
-                          return 'Enter team size.';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: notesController,
-                      maxLines: 3,
-                      decoration: _responseInputDecoration(
-                        'Response note for hospital',
-                      ),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Add a short note.';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () =>
-                  Navigator.of(dialogContext, rootNavigator: true).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: _brandGreen,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () {
-                if (!(formKey.currentState?.validate() ?? false)) {
-                  return;
-                }
-
-                Navigator.of(dialogContext, rootNavigator: true).pop({
-                  'eta_minutes': int.parse(etaController.text.trim()),
-                  'ambulance_unit': unitController.text.trim(),
-                  'contact_number': contactController.text.trim(),
-                  'team_size': int.parse(teamController.text.trim()),
-                  'notes': notesController.text.trim(),
-                });
-              },
-              icon: const Icon(Icons.local_shipping_rounded),
-              label: const Text('Send & Go'),
-            ),
-          ],
-        );
-      },
-    );
-
-    etaController.dispose();
-    unitController.dispose();
-    contactController.dispose();
-    teamController.dispose();
-    notesController.dispose();
-
-    return result;
-  }
-
-  InputDecoration _responseInputDecoration(String label, {String? suffixText}) {
-    return InputDecoration(
-      labelText: label,
-      suffixText: suffixText,
-      filled: true,
-      fillColor: _canvas,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
-    );
-  }
-
   void _maybeShowHospitalDispatchPopup(Map<String, dynamic>? alert) {
-    if (alert == null || _isHospitalDispatchPopupVisible) {
+    if (alert == null ||
+        !_isResponderAvailable ||
+        _isHospitalDispatchPopupVisible ||
+        _isCaseTransitionInProgress) {
       return;
     }
 
@@ -715,7 +580,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
   }
 
   Future<void> _showHospitalDispatchPopup(Map<String, dynamic> alert) async {
-    if (_isHospitalDispatchPopupVisible || !mounted) {
+    if (_isHospitalDispatchPopupVisible ||
+        _isCaseTransitionInProgress ||
+        !mounted) {
       return;
     }
 
@@ -802,38 +669,70 @@ class _HealthHomePageState extends State<HealthHomePage> {
   }
 
   Future<void> _acceptCase(Map<String, dynamic> alert) async {
-    final responseForm = await _showGoingResponseForm(alert);
-    if (responseForm == null) {
-      return;
-    }
-    await _waitForDialogTransition();
-    if (!mounted) {
-      return;
-    }
-    await _performDriverCaseAcceptance(alert, responseForm: responseForm);
-    if (!mounted) {
+    if (_isCaseTransitionInProgress) {
       return;
     }
 
-    final arrived = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AmbulanceTripProgressPage(
-          destinationLabel: _locationText(alert),
-          driverLabel: _personName(alert),
-          severityLabel: _severityHeadline(_impactLevel(alert)),
-          ambulanceUnit:
-              responseForm['ambulance_unit']?.toString() ?? 'Ambulance Unit',
-          etaMinutes: (responseForm['eta_minutes'] as int?) ?? 8,
+    setState(() {
+      _isCaseTransitionInProgress = true;
+    });
+
+    try {
+      final responseForm = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AmbulanceResponseFormPage(
+            locationLabel: _locationText(alert),
+            severityLabel: _severityHeadline(_impactLevel(alert)),
+            severityDescription: AppRepository.severityExplanation(
+              _impactLevel(alert),
+            ),
+            initialUnit:
+                _profile['ambulance_unit']?.toString() ??
+                _profile['vehicle_number']?.toString() ??
+                'AMB-01',
+            initialContact:
+                _profile['contact_number']?.toString() ??
+                _profile['phone']?.toString() ??
+                '',
+          ),
         ),
-      ),
-    );
+      );
+      if (responseForm == null || !mounted) {
+        return;
+      }
 
-    if (!mounted || arrived != true) {
-      return;
+      await _performDriverCaseAcceptance(alert, responseForm: responseForm);
+      if (!mounted) {
+        return;
+      }
+
+      final arrived = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AmbulanceTripProgressPage(
+            destinationLabel: _locationText(alert),
+            driverLabel: _personName(alert),
+            severityLabel: _severityHeadline(_impactLevel(alert)),
+            ambulanceUnit:
+                responseForm['ambulance_unit']?.toString() ?? 'Ambulance Unit',
+            etaMinutes: (responseForm['eta_minutes'] as int?) ?? 8,
+          ),
+        ),
+      );
+
+      if (!mounted || arrived != true) {
+        return;
+      }
+
+      await _markArrived(alert);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCaseTransitionInProgress = false;
+        });
+      }
     }
-
-    await _markArrived(alert);
   }
 
   Future<void> _declineCase(Map<String, dynamic> alert) async {
@@ -1470,14 +1369,43 @@ class _HealthHomePageState extends State<HealthHomePage> {
   }
 
   Widget _buildLocationBanner({
-    required int nearbyCount,
+    required List<Map<String, dynamic>> nearbyAlerts,
+    required List<Map<String, dynamic>> allAlerts,
     required Map<String, dynamic>? activeAlert,
   }) {
     final permissionGranted = _currentPosition != null;
-    final statusLabel = activeAlert == null ? 'Available' : _activeCaseStatus;
+    final statusLabel = _isResponderAvailable ? 'Available' : 'Not Available';
+    final bannerLocationLabel = permissionGranted
+        ? _currentLocationLabel
+        : 'Current location unavailable';
+    final currentUid = FirebaseAuth.instance.currentUser?.uid;
+    final liveAlertCount = nearbyAlerts.length + (activeAlert == null ? 0 : 1);
+    final criticalCount =
+        nearbyAlerts.where((alert) => _impactLevel(alert) >= 5).length +
+        ((activeAlert != null && _impactLevel(activeAlert) >= 5) ? 1 : 0);
+    final highCount =
+        nearbyAlerts.where((alert) => _impactLevel(alert) == 4).length +
+        ((activeAlert != null && _impactLevel(activeAlert) == 4) ? 1 : 0);
+    final syncedReports = allAlerts.where((alert) {
+      if (currentUid == null) {
+        return false;
+      }
+      return alert['assigned_driver_uid']?.toString() == currentUid &&
+          alert['driver_dispatch_status']?.toString().toLowerCase() ==
+              'report_submitted';
+    }).length;
+    final displayedReports = syncedReports > _reportsSubmitted
+        ? syncedReports
+        : _reportsSubmitted;
+    final overviewDistanceLabel = permissionGranted
+        ? 'Within 5 km'
+        : 'GPS required';
+    final overviewSubtitle = permissionGranted
+        ? 'Filtered by your GPS'
+        : 'Enable location access';
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF236A29), Color(0xFF3A8E43)],
@@ -1497,128 +1425,552 @@ class _HealthHomePageState extends State<HealthHomePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
-                Icons.gps_fixed_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  permissionGranted
-                      ? 'Location is on'
-                      : 'Location permission required',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                              width: 2,
+                            ),
+                            color: Colors.white.withValues(alpha: 0.06),
+                          ),
+                          child: const Icon(
+                            Icons.medical_services_rounded,
+                            color: Colors.white,
+                            size: 29,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              'AMBULANCE\nSTATUS',
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.95),
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.2,
+                                height: 1.05,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              Text(
-                _formatClockTime(DateTime.now()),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontWeight: FontWeight.w700,
-                ),
+              const SizedBox(width: 12),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _formatClockTime(DateTime.now()).toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Text(
+                          'GPS',
+                          style: TextStyle(
+                            color: Color(0xFFE7FFE7),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(
+                          permissionGranted
+                              ? Icons.network_cell_rounded
+                              : Icons.location_disabled_rounded,
+                          size: 18,
+                          color: const Color(0xFFE7FFE7),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            permissionGranted
-                ? 'Nearby accident alerts are filtered using your live ambulance GPS.'
-                : 'Enable location to receive nearby accident alerts.',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.9),
-              height: 1.35,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: _isResponderAvailable
+                            ? const Color(0xFF8BEA53)
+                            : const Color(0xFFBFC6C0),
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_isResponderAvailable
+                                    ? const Color(0xFF8BEA53)
+                                    : const Color(0xFFBFC6C0))
+                                .withValues(alpha: 0.28),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        statusLabel,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Transform.scale(
+                      scale: 0.78,
+                      child: Switch.adaptive(
+                        value: _isResponderAvailable,
+                        onChanged: _toggleResponderAvailability,
+                        activeThumbColor: Colors.white,
+                        activeTrackColor: const Color(0xFF8BEA53),
+                        inactiveThumbColor: const Color(0xFFE2E5E2),
+                        inactiveTrackColor: Colors.white.withValues(
+                          alpha: 0.24,
+                        ),
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      width: 1,
+                      height: 22,
+                      color: Colors.white.withValues(alpha: 0.24),
+                    ),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.location_on_outlined,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              bannerLocationLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Divider(color: Colors.white.withValues(alpha: 0.16)),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _buildBannerMetric(
+                  icon: Icons.notifications_active_rounded,
+                  iconColor: Colors.white,
+                  value: '$liveAlertCount',
+                  label: 'Active Alerts',
+                ),
+              ),
+              _buildMetricDivider(),
+              Expanded(
+                child: _buildBannerMetric(
+                  icon: Icons.warning_amber_rounded,
+                  iconColor: const Color(0xFFFF6F61),
+                  value: '$criticalCount',
+                  label: 'Critical (L5)',
+                ),
+              ),
+              _buildMetricDivider(),
+              Expanded(
+                child: _buildBannerMetric(
+                  icon: Icons.error_rounded,
+                  iconColor: const Color(0xFFFFB020),
+                  value: '$highCount',
+                  label: 'High (L4)',
+                ),
+              ),
+              _buildMetricDivider(),
+              Expanded(
+                child: _buildBannerMetric(
+                  icon: Icons.assignment_turned_in_rounded,
+                  iconColor: const Color(0xFF9FC5FF),
+                  value: '$displayedReports',
+                  label: 'Reports',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.notifications_active_outlined,
+                  color: Colors.white,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _latestUpdate,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13.5,
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'You will be notified immediately when a case is nearby.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.9),
+                          fontSize: 12.6,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final chipWidth = (constraints.maxWidth - 10) / 2;
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(
-                    width: chipWidth,
-                    child: _buildBannerChip(
-                      icon: Icons.place_rounded,
-                      label: _currentLocationLabel,
+          const SizedBox(height: 16),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.16)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.gps_fixed_rounded,
+                      color: Colors.white,
+                      size: 22,
                     ),
-                  ),
-                  SizedBox(
-                    width: chipWidth,
-                    child: _buildBannerChip(
-                      icon: Icons.notifications_rounded,
-                      label: '$nearbyCount alert${nearbyCount == 1 ? '' : 's'}',
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'NEARBY OVERVIEW',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ),
-                  ),
-                  SizedBox(
-                    width: chipWidth,
-                    child: _buildBannerChip(
-                      icon: Icons.local_hospital_rounded,
-                      label: 'Status: $statusLabel',
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 14,
+                          height: 14,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF8BEA53),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Live',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  SizedBox(
-                    width: chipWidth,
-                    child: _buildBannerChip(
-                      icon: Icons.assignment_turned_in_rounded,
-                      label: 'Reports: $_reportsSubmitted',
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildBannerOverviewValue(
+                        value: '$liveAlertCount',
+                        title: 'Accidents Nearby',
+                        subtitle: 'Level 3 and above',
+                      ),
                     ),
-                  ),
-                  SizedBox(
-                    width: constraints.maxWidth,
-                    child: _buildBannerChip(
-                      icon: Icons.update_rounded,
-                      label: _latestUpdate,
-                      maxLines: 1,
+                    _buildMetricDivider(),
+                    Expanded(
+                      child: _buildBannerOverviewValue(
+                        value: overviewDistanceLabel,
+                        title: permissionGranted
+                            ? _currentLocationLabel
+                            : 'Location access',
+                        subtitle: overviewSubtitle,
+                        icon: Icons.location_on_rounded,
+                      ),
                     ),
-                  ),
-                ],
-              );
-            },
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.history_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Last updated:\n${_formatClockTime(DateTime.now()).toUpperCase()}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12.6,
+                                fontWeight: FontWeight.w600,
+                                height: 1.25,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: _isRefreshing ? null : _refreshDashboard,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(
+                            alpha: _isRefreshing ? 0.06 : 0.10,
+                          ),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_isRefreshing)
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            else
+                              const Icon(
+                                Icons.refresh_rounded,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _isRefreshing ? 'Refreshing...' : 'Refresh Now',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildBannerChip({
+  Widget _buildBannerMetric({
     required IconData icon,
+    required Color iconColor,
+    required String value,
     required String label,
-    int maxLines = 2,
   }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: iconColor, size: 26),
+        const SizedBox(height: 8),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 24,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.95),
+            fontSize: 12.4,
+            height: 1.25,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMetricDivider() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 16),
-          const SizedBox(width: 7),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: maxLines,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-                height: 1.15,
-              ),
+      width: 1,
+      height: 82,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: Colors.white.withValues(alpha: 0.18),
+    );
+  }
+
+  Widget _buildBannerOverviewValue({
+    required String value,
+    required String title,
+    required String subtitle,
+    IconData? icon,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (icon == null)
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+            ),
+          )
+        else
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: const Color(0xFFACF078), size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        const SizedBox(height: 6),
+        Text(
+          title,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12.2,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontSize: 11.4,
+            height: 1.25,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1965,7 +2317,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                   background: palette.soft,
                   foreground: palette.primary,
                   border: palette.border,
-                  onTap: () => _openConversation(alert),
+                  onTap: _isCaseTransitionInProgress
+                      ? null
+                      : () => _openConversation(alert),
                 ),
                 if (level <= 3)
                   _buildActionPill(
@@ -1974,7 +2328,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                     background: const Color(0xFFF1F4F0),
                     foreground: const Color(0xFF375D42),
                     border: const Color(0xFFE3E7E0),
-                    onTap: () => _callEvUser(alert),
+                    onTap: _isCaseTransitionInProgress
+                        ? null
+                        : () => _callEvUser(alert),
                   ),
                 if (level >= 4 && isAccepted)
                   _buildActionPill(
@@ -1982,7 +2338,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                     icon: Icons.place_rounded,
                     background: _darkGreen,
                     foreground: Colors.white,
-                    onTap: () => _markArrived(alert),
+                    onTap: _isCaseTransitionInProgress
+                        ? null
+                        : () => _markArrived(alert),
                   )
                 else if (level >= 4 && isArrived)
                   _buildActionPill(
@@ -1990,7 +2348,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                     icon: Icons.assignment_turned_in_outlined,
                     background: _darkGreen,
                     foreground: Colors.white,
-                    onTap: () => _showReportForm(alert),
+                    onTap: _isCaseTransitionInProgress
+                        ? null
+                        : () => _showReportForm(alert),
                   )
                 else if (level >= 4 && !isSubmitted) ...[
                   _buildActionPill(
@@ -1998,7 +2358,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                     icon: Icons.check_circle_outline_rounded,
                     background: level >= 5 ? Colors.white : _darkGreen,
                     foreground: level >= 5 ? _darkGreen : Colors.white,
-                    onTap: () => _acceptCase(alert),
+                    onTap: _isCaseTransitionInProgress
+                        ? null
+                        : () => _acceptCase(alert),
                   ),
                   _buildActionPill(
                     label: 'NOT GOING',
@@ -2006,7 +2368,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                     background: const Color(0xFFFFF4F2),
                     foreground: const Color(0xFFE53935),
                     border: const Color(0xFFFFC9C2),
-                    onTap: () => _declineCase(alert),
+                    onTap: _isCaseTransitionInProgress
+                        ? null
+                        : () => _declineCase(alert),
                   ),
                 ],
                 _buildActionPill(
@@ -2017,7 +2381,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                       : const Color(0xFFF1F4F0),
                   foreground: const Color(0xFF375D42),
                   border: level >= 5 ? null : const Color(0xFFE3E7E0),
-                  onTap: () => _launchMap(alert),
+                  onTap: _isCaseTransitionInProgress
+                      ? null
+                      : () => _launchMap(alert),
                 ),
               ],
             ),
@@ -2087,7 +2453,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                 icon: Icons.navigation_rounded,
                 background: _brandGreen,
                 foreground: Colors.white,
-                onTap: () => _launchMap(alert),
+                onTap: _isCaseTransitionInProgress
+                    ? null
+                    : () => _launchMap(alert),
               ),
               _buildActionPill(
                 label: 'Mark Arrived',
@@ -2095,7 +2463,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                 background: Colors.white,
                 foreground: const Color(0xFF374151),
                 border: const Color(0xFFD6E1DA),
-                onTap: _activeCaseStatus == 'Arrived'
+                onTap:
+                    _activeCaseStatus == 'Arrived' ||
+                        _isCaseTransitionInProgress
                     ? null
                     : () => _markArrived(alert),
               ),
@@ -2105,7 +2475,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
                 background: Colors.white,
                 foreground: _brandGreen,
                 border: const Color(0xFFD6E1DA),
-                onTap: () => _openConversation(alert),
+                onTap: _isCaseTransitionInProgress
+                    ? null
+                    : () => _openConversation(alert),
               ),
             ],
           ),
@@ -2113,7 +2485,9 @@ class _HealthHomePageState extends State<HealthHomePage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: canSubmit ? () => _showReportForm(alert) : null,
+              onPressed: canSubmit && !_isCaseTransitionInProgress
+                  ? () => _showReportForm(alert)
+                  : null,
               style: ElevatedButton.styleFrom(
                 elevation: 0,
                 backgroundColor: _brandGreen,
@@ -2798,6 +3172,15 @@ class _HealthHomePageState extends State<HealthHomePage> {
 
   String _statusLabel(Map<String, dynamic> alert) {
     return alert['status']?.toString().trim() ?? '';
+  }
+
+  void _toggleResponderAvailability(bool value) {
+    setState(() {
+      _isResponderAvailable = value;
+      _latestUpdate = _isResponderAvailable
+          ? 'Responder is available for the next emergency alert.'
+          : 'Responder availability is turned off for now.';
+    });
   }
 }
 

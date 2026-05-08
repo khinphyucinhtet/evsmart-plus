@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../services/app_repository.dart';
 import 'conversation_thread_panel.dart';
 import 'message_conversation_page.dart';
+import 'nearby_assist_map.dart';
 
 class ResponderMessagesPage extends StatefulWidget {
   const ResponderMessagesPage({
@@ -11,11 +12,13 @@ class ResponderMessagesPage extends StatefulWidget {
     required this.role,
     required this.title,
     required this.emptySubtitle,
+    this.showNearbyHospitalsShortcut = false,
   });
 
   final String role;
   final String title;
   final String emptySubtitle;
+  final bool showNearbyHospitalsShortcut;
 
   @override
   State<ResponderMessagesPage> createState() => _ResponderMessagesPageState();
@@ -80,7 +83,18 @@ class _ResponderMessagesPageState extends State<ResponderMessagesPage> {
           backgroundColor: const Color(0xFFF3F4F6),
           appBar: AppBar(
             backgroundColor: const Color(0xFF2E7D32),
-            title: Text(widget.title, style: const TextStyle(color: Colors.white)),
+            title: Text(
+              widget.title,
+              style: const TextStyle(color: Colors.white),
+            ),
+            actions: [
+              if (widget.showNearbyHospitalsShortcut)
+                IconButton(
+                  tooltip: 'Nearby Hospitals',
+                  onPressed: _showNearbyHospitalsSheet,
+                  icon: const Icon(Icons.add_circle_outline_rounded),
+                ),
+            ],
           ),
           body: LayoutBuilder(
             builder: (context, constraints) {
@@ -106,6 +120,10 @@ class _ResponderMessagesPageState extends State<ResponderMessagesPage> {
             width: 360,
             child: Column(
               children: [
+                if (widget.showNearbyHospitalsShortcut) ...[
+                  _buildNearbyHospitalsHintCard(),
+                  const SizedBox(height: 14),
+                ],
                 _buildSummaryCard(conversations.length),
                 const SizedBox(height: 14),
                 Expanded(child: _buildConversationList(conversations)),
@@ -150,13 +168,16 @@ class _ResponderMessagesPageState extends State<ResponderMessagesPage> {
   Widget _buildMobileList(List<Map<String, dynamic>> conversations) {
     return Column(
       children: [
+        if (widget.showNearbyHospitalsShortcut)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            child: _buildNearbyHospitalsHintCard(),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
           child: _buildSummaryCard(conversations.length),
         ),
-        Expanded(
-          child: _buildConversationList(conversations),
-        ),
+        Expanded(child: _buildConversationList(conversations)),
       ],
     );
   }
@@ -184,12 +205,60 @@ class _ResponderMessagesPageState extends State<ResponderMessagesPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            widget.role == 'hospital'
+            widget.showNearbyHospitalsShortcut
+                ? 'Tap any driver chat to coordinate emergency response, or press + to open Nearby Hospitals.'
+                : widget.role == 'hospital'
                 ? 'Tap any driver chat to coordinate emergency response.'
                 : 'Tap any driver chat to continue EV repair support.',
             style: const TextStyle(height: 1.35),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildNearbyHospitalsHintCard() {
+    return Material(
+      color: const Color(0xFFEFF7F0),
+      borderRadius: BorderRadius.circular(22),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(22),
+        onTap: _showNearbyHospitalsSheet,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFF9FD3A5)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.local_hospital_rounded,
+                  color: Color(0xFF2E7D32),
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Text(
+                  'Press + to connect with nearby hospitals.',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -344,6 +413,133 @@ class _ResponderMessagesPageState extends State<ResponderMessagesPage> {
     if (mounted) {
       AppRepository.markInboxRead(widget.role);
     }
+  }
+
+  Future<void> _showNearbyHospitalsSheet() async {
+    if (!widget.showNearbyHospitalsShortcut) {
+      return;
+    }
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 26),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'What do you need?',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                Text(
+                  'Choose the support you want to connect with right now.',
+                  style: TextStyle(color: Colors.grey.shade700, height: 1.35),
+                ),
+                const SizedBox(height: 20),
+                _assistButton(
+                  icon: Icons.local_hospital_rounded,
+                  label: 'Nearby Hospitals',
+                  subtitle:
+                      'Search nearby hospitals and clinics, then message or call them.',
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const NearbyAssistMapPage(
+                          assistType: AssistType.health,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _assistButton({
+    required IconData icon,
+    required String label,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFFF7F8FA),
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8F5E9),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: const Color(0xFF2E7D32), size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        color: Colors.grey.shade700,
+                        fontSize: 15,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              const Icon(Icons.chevron_right_rounded, size: 28),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<bool?> _confirmDelete(String threadId) async {

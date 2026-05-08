@@ -14,7 +14,8 @@ class AndroidBackgroundImpactService {
       !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   static Future<void> start() async {
-    if (!_supported || !await ImpactDetectionService.backgroundAlertsEnabled()) {
+    if (!_supported ||
+        !await ImpactDetectionService.backgroundAlertsEnabled()) {
       return;
     }
     await _channel.invokeMethod<void>('startService');
@@ -25,6 +26,20 @@ class AndroidBackgroundImpactService {
       return;
     }
     await _channel.invokeMethod<void>('stopService');
+  }
+
+  static Future<void> snooze(int minutes) async {
+    if (!_supported) {
+      return;
+    }
+    await _channel.invokeMethod<void>('snoozeService', {'minutes': minutes});
+  }
+
+  static Future<void> openControls() async {
+    if (!_supported) {
+      return;
+    }
+    await _channel.invokeMethod<void>('openControls');
   }
 
   static Future<void> updateContext({

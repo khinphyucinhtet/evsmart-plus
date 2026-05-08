@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../services/app_repository.dart';
 import '../services/impact_detection_service.dart';
 import 'alert.dart';
+import 'app_footer.dart';
 import 'app_header.dart';
 import 'global_search.dart';
 import 'home_driver.dart';
@@ -23,7 +24,6 @@ class ChargePage extends StatefulWidget {
 }
 
 class _ChargePageState extends State<ChargePage> {
-  int selectedTab = 1;
   final MapController mapController = MapController();
   final LatLng defaultCenter = const LatLng(3.0738, 101.5183);
   final TextEditingController searchController = TextEditingController();
@@ -69,20 +69,21 @@ class _ChargePageState extends State<ChargePage> {
       return;
     }
 
-    positionStream = Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
-        distanceFilter: 5,
-      ),
-    ).listen((Position position) {
-      final newLocation = LatLng(position.latitude, position.longitude);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        userLocation = newLocation;
-      });
-    });
+    positionStream =
+        Geolocator.getPositionStream(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            distanceFilter: 5,
+          ),
+        ).listen((Position position) {
+          final newLocation = LatLng(position.latitude, position.longitude);
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            userLocation = newLocation;
+          });
+        });
   }
 
   void _handleImpactDetected(ImpactEvent event) {
@@ -209,8 +210,7 @@ class _ChargePageState extends State<ChargePage> {
                   LinearProgressIndicator(
                     value: seconds / 5,
                     backgroundColor: Colors.grey.shade300,
-                    valueColor:
-                        const AlwaysStoppedAnimation(Color(0xFF2E7D32)),
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFF2E7D32)),
                   ),
                   const SizedBox(height: 12),
                   const Text(
@@ -686,8 +686,9 @@ class _ChargePageState extends State<ChargePage> {
                             child: ElevatedButton(
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF2E7D32),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(18),
                                 ),
@@ -714,8 +715,6 @@ class _ChargePageState extends State<ChargePage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomSystem = MediaQuery.of(context).padding.bottom;
-
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: AppRepository.streamChargingStations(),
       builder: (context, snapshot) {
@@ -814,7 +813,9 @@ class _ChargePageState extends State<ChargePage> {
                                       title: Text(
                                         station['name']?.toString() ?? '',
                                       ),
-                                      subtitle: Text(distanceToStation(station)),
+                                      subtitle: Text(
+                                        distanceToStation(station),
+                                      ),
                                       onTap: () => selectStation(station),
                                     );
                                   },
@@ -853,94 +854,46 @@ class _ChargePageState extends State<ChargePage> {
               ],
             ),
           ),
-          bottomNavigationBar: Container(
-            height: 85 + bottomSystem,
-            padding: EdgeInsets.only(top: 8, bottom: bottomSystem + 8),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              boxShadow: [BoxShadow(blurRadius: 12, color: Colors.black12)],
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                buildTab(Icons.home, 'Home', 0),
-                buildTab(Icons.ev_station, 'Charge', 1),
-                buildTab(Icons.warning, 'Alert', 2),
-                buildTab(Icons.notifications, 'Noti', 3),
-                buildTab(Icons.card_giftcard, 'Rewards', 4),
-              ],
-            ),
+          bottomNavigationBar: AppFooter(
+            currentIndex: 1,
+            onTap: _handleFooterTap,
           ),
         );
       },
     );
   }
 
-  Widget buildTab(IconData icon, String label, int index) {
-    final isActive = selectedTab == index;
+  void _handleFooterTap(int index) {
+    if (index == 1) {
+      return;
+    }
 
-    return GestureDetector(
-      onTap: () {
-        if (index == 1) {
-          return;
-        }
+    if (index == 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const DriverHomePage()),
+      );
+    }
 
-        if (index == 0) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DriverHomePage()),
-          );
-        }
+    if (index == 2) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AlertPage()),
+      );
+    }
 
-        if (index == 2) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const AlertPage()),
-          );
-        }
+    if (index == 3) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const NotificationPage()),
+      );
+    }
 
-        if (index == 3) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const NotificationPage()),
-          );
-        }
-
-        if (index == 4) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const RewardsPage()),
-          );
-        }
-      },
-      child: Container(
-        width: 70,
-        decoration: isActive
-            ? BoxDecoration(
-                color: const Color(0xFF2E7D32).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              )
-            : null,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              icon,
-              size: 24,
-              color: isActive ? const Color(0xFF2E7D32) : Colors.grey,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: isActive ? const Color(0xFF2E7D32) : Colors.grey,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    if (index == 4) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const RewardsPage()),
+      );
+    }
   }
 }
-

@@ -1,0 +1,12 @@
+{
+  "rules": {
+    "users": {
+      ".indexOn": ["username"]
+    },
+    "alerts": {
+      ".indexOn": ["timestamp"]
+    },
+    ".read": true,
+    ".write": true
+  }
+}

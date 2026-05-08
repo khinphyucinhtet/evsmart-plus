@@ -97,6 +97,22 @@ class MainActivity : FlutterFragmentActivity() {
                         result.success(true)
                     }
 
+                    "snoozeService" -> {
+                        val minutes = call.argument<Int>("minutes") ?: 0
+                        val intent = Intent(this, ImpactForegroundService::class.java).apply {
+                            action = ImpactForegroundService.ACTION_SNOOZE
+                            putExtra(ImpactForegroundService.EXTRA_SNOOZE_MINUTES, minutes)
+                        }
+                        startService(intent)
+                        result.success(true)
+                    }
+
+                    "openControls" -> {
+                        val intent = Intent(this, ImpactMonitorControlActivity::class.java)
+                        startActivity(intent)
+                        result.success(true)
+                    }
+
                     else -> result.notImplemented()
                 }
             }

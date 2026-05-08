@@ -29,6 +29,45 @@ class _MessageConversationPageState extends State<MessageConversationPage> {
   bool _isDeleting = false;
   bool _isUploadingImage = false;
 
+  List<String> _quickRepliesFor(
+    List<Map<String, dynamic>> messages,
+    Map<String, dynamic> conversation,
+  ) {
+    if (widget.currentSenderRole != 'driver' || messages.isEmpty) {
+      return const <String>[];
+    }
+
+    Map<String, dynamic>? latestResponderMessage;
+    for (final message in messages.reversed) {
+      final senderRole = message['sender_role']?.toString() ?? '';
+      if (senderRole != 'driver' && senderRole != 'system') {
+        latestResponderMessage = message;
+        break;
+      }
+    }
+
+    if (latestResponderMessage == null) {
+      return const <String>[];
+    }
+
+    final text = latestResponderMessage['text']?.toString().toLowerCase() ?? '';
+    final locationName =
+        conversation['location_name']?.toString() ?? 'my current location';
+
+    if (text.contains('tap yes or no below') ||
+        text.contains('correct pickup point')) {
+      return const <String>['Yes', 'No'];
+    }
+    if (text.contains('send the exact pickup location') ||
+        text.contains('send the location')) {
+      return <String>['Use current location', 'Location: $locationName'];
+    }
+    if (text.contains('send a dashboard photo')) {
+      return const <String>['Battery warning is on', 'The EV is fully dead'];
+    }
+    return const <String>[];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -46,6 +85,7 @@ class _MessageConversationPageState extends State<MessageConversationPage> {
       stream: AppRepository.streamConversationMessages(threadId),
       builder: (context, snapshot) {
         final messages = snapshot.data ?? const <Map<String, dynamic>>[];
+        final quickReplies = _quickRepliesFor(messages, widget.conversation);
 
         return Scaffold(
           resizeToAvoidBottomInset: true,
@@ -115,6 +155,24 @@ class _MessageConversationPageState extends State<MessageConversationPage> {
                     ? _pickVehicleImage
                     : null,
                 isUploadingImage: _isUploadingImage,
+                quickReplies: quickReplies,
+                onQuickReply: (value) async {
+                  final outgoingText = switch (value) {
+                    'Yes' => 'Yes, use my current location.',
+                    'No' => 'No, the pickup location is different.',
+                    'Use current location' => 'Use my current location.',
+                    _ => value,
+                  };
+                  await AppRepository.sendConversationMessage(
+                    threadId: threadId,
+                    senderRole: widget.currentSenderRole,
+                    senderName: widget.currentSenderName,
+                    text: outgoingText,
+                  );
+                  if (mounted) {
+                    AppRepository.markInboxRead(widget.currentSenderRole);
+                  }
+                },
                 accentColor: const Color(0xFF2E7D32),
                 emptyTitle: 'No conversation selected',
                 emptySubtitle: 'Open a message thread from the inbox.',

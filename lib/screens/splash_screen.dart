@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/impact_detection_service.dart';
@@ -29,8 +30,10 @@ class _SplashScreenState extends State<SplashScreen> {
     }
     _started = true;
 
-    await ImpactDetectionService.maybeRequestBackgroundPermission(context);
-    await Future<void>.delayed(const Duration(seconds: 2));
+    if (!kIsWeb) {
+      await ImpactDetectionService.maybeRequestBackgroundPermission(context);
+    }
+    await Future<void>.delayed(Duration(seconds: kIsWeb ? 1 : 2));
 
     if (!mounted) {
       return;

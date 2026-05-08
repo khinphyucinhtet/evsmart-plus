@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/app_repository.dart';
 import '../services/impact_detection_service.dart';
 import 'alert.dart';
+import 'app_footer.dart';
 import 'app_header.dart';
 import 'charge.dart';
 import 'global_search.dart';
@@ -24,7 +25,6 @@ class _RewardsPageState extends State<RewardsPage> {
   static const Color _brandLight = Color(0xFF66BB6A);
   static const Color _pageBackground = Color(0xFFF7F7F4);
 
-  int selectedTab = 4;
   late final ImpactDetectionService _impactService;
   bool _isImpactDialogVisible = false;
   double _currentLatitude = 3.1390;
@@ -697,8 +697,6 @@ class _RewardsPageState extends State<RewardsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bottomSystem = MediaQuery.of(context).padding.bottom;
-
     return Scaffold(
       backgroundColor: _pageBackground,
       body: Column(
@@ -729,8 +727,32 @@ class _RewardsPageState extends State<RewardsPage> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildBottomNav(bottomSystem),
+      bottomNavigationBar: AppFooter(
+        currentIndex: 4,
+        onTap: _handleFooterTap,
+        activeColor: _brandColor,
+      ),
     );
+  }
+
+  void _handleFooterTap(int index) {
+    if (index == 4) {
+      return;
+    }
+
+    final page = switch (index) {
+      0 => const DriverHomePage(),
+      1 => const ChargePage(),
+      2 => const AlertPage(),
+      3 => const NotificationPage(),
+      _ => null,
+    };
+
+    if (page == null) {
+      return;
+    }
+
+    Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => page));
   }
 
   Widget _buildPointsCard() {
@@ -1489,81 +1511,6 @@ class _RewardsPageState extends State<RewardsPage> {
         ],
       ),
       child: child,
-    );
-  }
-
-  Widget _buildBottomNav(double bottomSystem) {
-    return Container(
-      height: 85 + bottomSystem,
-      padding: EdgeInsets.only(top: 8, bottom: bottomSystem + 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        boxShadow: [BoxShadow(blurRadius: 12, color: Colors.black12)],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _buildTab(Icons.home, 'Home', 0),
-          _buildTab(Icons.ev_station, 'Charge', 1),
-          _buildTab(Icons.warning, 'Alert', 2),
-          _buildTab(Icons.notifications, 'Noti', 3),
-          _buildTab(Icons.card_giftcard, 'Rewards', 4),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTab(IconData icon, String label, int index) {
-    final isActive = selectedTab == index;
-
-    return GestureDetector(
-      onTap: () {
-        if (index == 4) {
-          return;
-        }
-
-        if (index == 0) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const DriverHomePage()),
-          );
-        }
-
-        if (index == 1) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const ChargePage()),
-          );
-        }
-
-        if (index == 2) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const AlertPage()),
-          );
-        }
-
-        if (index == 3) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => const NotificationPage()),
-          );
-        }
-      },
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: isActive ? _brandColor : Colors.grey),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: isActive ? _brandColor : Colors.grey,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

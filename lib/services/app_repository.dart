@@ -5,7 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_database/firebase_database.dart';
 
-import 'gemini_ai_service.dart';
+import 'gemini_service.dart';
 
 class AppRepository {
   AppRepository._();
@@ -1570,7 +1570,7 @@ class AppRepository {
       );
     }
 
-    final aiReplyFuture = GeminiAiService.supportReply(
+    final aiReplyFuture = GeminiService.askSupportGemini(
       responderRole: responderRole ?? 'support',
       responderName: senderName,
       locationName: thread['location_name']?.toString() ?? 'current location',
@@ -1585,7 +1585,7 @@ class AppRepository {
     final aiReply = await aiReplyFuture;
     await typingRef?.remove();
 
-    final reply = aiReply ?? ruleReply;
+    final reply = _isWeakAiReply(aiReply) ? ruleReply : aiReply!;
     await _appendConversationMessage(
       threadId: threadId,
       senderId: responderId,
@@ -1605,6 +1605,41 @@ class AppRepository {
     );
   }
 
+  static bool _isWeakAiReply(String? text) {
+    final reply = text?.trim().toLowerCase() ?? '';
+    if (reply.isEmpty) {
+      return true;
+    }
+
+    const weakReplies = <String>{
+      'noted',
+      'okay',
+      'ok',
+      'alright',
+      'yes',
+      'yes we can help.',
+      'okay sentul',
+      'noted.',
+      'alright.',
+      'ok.',
+    };
+
+    if (weakReplies.contains(reply)) {
+      return true;
+    }
+
+    if ((reply.startsWith('okay ') || reply.startsWith('ok ')) &&
+        reply.split(RegExp(r'\s+')).length <= 4) {
+      return true;
+    }
+
+    if (reply.split(RegExp(r'\s+')).length <= 3) {
+      return true;
+    }
+
+    return false;
+  }
+
   static String _automatedTechnicianReply(
     String driverMessage,
     Map<String, dynamic> thread, {
@@ -1614,30 +1649,56 @@ class AppRepository {
     final location = thread['location_name']?.toString() ?? 'your location';
     final workshop =
         thread['responder_name']?.toString() ?? 'Nearby EV Technician';
+    final trimmedMessage = driverMessage.trim();
+    final looksLikeTypedLocation =
+        RegExp(
+          r'(jalan|road|street|lorong|parking|level|mall|station|near|opposite|beside|\d{2,})',
+          caseSensitive: false,
+        ).hasMatch(trimmedMessage) &&
+        trimmedMessage.length > 7;
 
     if (imageShared) {
-      return 'Photo received by $workshop. I have added it to your EV roadside case near $location. To prepare the correct response, please confirm: can the EV still move, which side is damaged, is any dashboard warning light showing, and do you notice heat, smoke, leaking fluid, or battery smell?';
+      return 'Thanks, I received the vehicle photo for your $workshop case near $location. Please stay parked and send one dashboard photo too if any warning is showing. Can the EV still move, or is it fully stuck?';
     }
 
-    if (message.contains('hi') ||
-        message.contains('hello') ||
-        message.contains('help')) {
-      return 'Hi, this is $workshop. I am checking your EV support request near $location. Tell me what happened in one line, whether the car can still move, and whether the problem looks like battery, tire, brake, charging, or accident damage. If safe, send a clear photo and I will guide the next step.';
+    if (message == 'yes' ||
+        message.contains('yes use my current location') ||
+        message.contains('use my current location') ||
+        message.contains('current location is correct') ||
+        message.contains('that location is correct')) {
+      return 'Okay, tow service activated for $location. Dispatching the nearest recovery driver now with ETA about 12 minutes. Please keep your phone nearby.';
     }
-
+    if (message == 'no' ||
+        message.contains('wrong location') ||
+        message.contains('not correct')) {
+      return 'No problem. Send the exact pickup location, nearest landmark, or parking level and I will update the tow request right away.';
+    }
+    if (looksLikeTypedLocation ||
+        message.contains('my location is') ||
+        message.contains('i am at') ||
+        message.contains('pickup location')) {
+      return 'Thanks, I updated the pickup point. Help is on the way now, and the nearest tow driver is being dispatched. Please stay with the EV if it is safe.';
+    }
+    if (message.contains('not start') ||
+        message.contains('won\'t start') ||
+        message.contains('cannot start') ||
+        message.contains("can't start") ||
+        message.contains('car not starting')) {
+      return 'Please stop trying to start it for now. Send me a dashboard warning photo if you can, and tell me whether the EV powers on at all or stays fully dead.';
+    }
     if (message.contains('battery') || message.contains('charge')) {
-      return 'Battery or charging issue noted by $workshop. Please stop driving if the high-voltage, battery temperature, or charging warning remains on. Send a dashboard photo if possible and confirm battery percentage, whether the EV can shift to Drive, and whether the charging port or cable is stuck.';
+      return 'Please stop driving if the EV shows a battery or charging warning. Send me a dashboard photo first, then tell me the battery percentage and whether the car can still shift into Drive.';
     }
     if (message.contains('tire') ||
         message.contains('tyre') ||
         message.contains('wheel')) {
-      return 'Noted by $workshop. This sounds like a tire or wheel case. Park in a safe area if possible, turn on hazard lights, and send a photo of the damaged wheel side. Tell us if the tire is flat, rim is bent, or the car is pulling to one side.';
+      return 'This sounds like a tire or wheel issue. Park safely, turn on hazard lights, and send a photo of the damaged side. Is the tire flat, or is the rim damaged too?';
     }
     if (message.contains('brake') || message.contains('steering')) {
-      return 'Noted by $workshop. Brake or steering issues are high risk. Please avoid driving further and keep the EV stationary if control feels unstable. Confirm if the brake pedal feels soft, steering is locked, or warning lights are showing, then we can decide whether towing is needed.';
+      return 'Brake or steering problems are high risk, so please keep the EV parked. Send a dashboard photo and tell me if the steering is locked or the brake pedal feels soft.';
     }
     if (message.contains('tow') || message.contains('truck')) {
-      return 'Towing request noted. We can prepare recovery from $location. Please stay away from traffic, turn on hazard lights, share the closest landmark or road shoulder position, and send one front/side photo so we know whether flatbed towing is required.';
+      return 'Tow service can be activated. I am using your current app location as $location. Is that the correct pickup point? Tap Yes or No below, or send the exact location if it is different.';
     }
     if (message.contains('smoke') ||
         message.contains('burn') ||
@@ -1647,7 +1708,7 @@ class AppRepository {
     if (message.contains('cannot move') ||
         message.contains("can't move") ||
         message.contains('won\'t move')) {
-      return 'Noted by $workshop. Since the EV cannot move near $location, we will treat this as a roadside recovery case. Please confirm if the gear selector, parking brake, or 12V system is stuck, and send a photo of the dashboard warning if available.';
+      return 'Understood. Since the EV cannot move near $location, please send a dashboard warning photo and tell me whether the gear selector, parking brake, or 12V system seems stuck.';
     }
     if (message.contains('accident') ||
         message.contains('crash') ||
@@ -1658,14 +1719,19 @@ class AppRepository {
     if (message.contains('on the way') ||
         message.contains('come') ||
         message.contains('send someone')) {
-      return '$workshop has marked the roadside request as on the way for the demo case near $location. Please keep your phone reachable, send the vehicle photo if you have not already, and wait in a safe area away from traffic.';
+      return 'Help can be sent to $location. Please stand by in a safe place. If towing is needed, I can dispatch the nearest recovery driver as soon as you confirm the pickup location.';
     }
     if (message.contains('where') ||
         message.contains('location') ||
         message.contains('address')) {
       return '$workshop is using the location attached to this chat: $location. If that is not accurate, send your nearest landmark, road name, parking level, or shop lot number so we can update the case.';
     }
-    return 'Noted by $workshop. I have updated your EV support case near $location. Please answer these quick checks: what happened, can the EV still move, any battery/tire/brake warning, and can you send a photo of the vehicle condition?';
+    if (message.contains('hi') ||
+        message.contains('hello') ||
+        message.contains('help')) {
+      return 'Hi, this is $workshop. Tell me what happened, whether the EV can still move, and send a dashboard or vehicle photo so I can guide the next step.';
+    }
+    return 'I can help with that. Tell me what happened in one line and send a dashboard or vehicle photo so I can guide the next step.';
   }
 
   static String _automatedHospitalReply(
@@ -1679,13 +1745,7 @@ class AppRepository {
         thread['responder_name']?.toString() ?? 'Hospital Emergency Triage';
 
     if (imageShared) {
-      return 'Photo received by $hospital. I have attached it to the emergency triage note for $location. Please confirm immediately: is anyone injured or trapped, how many people are in the EV, are airbags deployed, and do you see smoke, fire, leaking fluid, or battery heat?';
-    }
-    if (message.contains('hi') ||
-        message.contains('hello') ||
-        message.contains('help') ||
-        message.contains('emergency')) {
-      return 'Hello, this is $hospital emergency triage. I am here with you. First, move to a safe place if you can. Please tell me: are you or any passenger injured, how many people are involved, and is the EV smoking, leaking, or blocking traffic near $location?';
+      return 'Thanks, I received the photo for triage near $location. Please tell me how many people are involved, whether anyone is injured or trapped, and if there is smoke, fire, or battery heat.';
     }
     if (message.contains('injur') ||
         message.contains('bleed') ||
@@ -1719,7 +1779,7 @@ class AppRepository {
         message.contains('come') ||
         message.contains('send') ||
         message.contains('on the way')) {
-      return '$hospital has noted that ambulance help may be needed near $location. For the demo flow, this chat is preparing the hospital-side notification. Please keep your phone on, stay visible, and confirm patient count and injury severity.';
+      return 'Please keep your phone on and stay visible near $location. Help is being arranged, so confirm patient count and whether anyone has severe bleeding or breathing difficulty.';
     }
     if (message.contains('safe') ||
         message.contains('ok') ||
@@ -1727,7 +1787,13 @@ class AppRepository {
         message.contains('cancel')) {
       return 'Safety update noted by $hospital. Even if you feel okay, monitor dizziness, chest pain, headache, neck pain, or breathing difficulty. If symptoms appear, reply here and avoid driving until the EV is checked.';
     }
-    return '$hospital has updated your emergency chat near $location. Please answer these quick triage points: number of people, any injury, can everyone exit the EV, any smoke/fire/battery heat, and can you send a photo if safe?';
+    if (message.contains('hi') ||
+        message.contains('hello') ||
+        message.contains('help') ||
+        message.contains('emergency')) {
+      return 'Hello, this is $hospital emergency triage. Move to a safe place if you can, then tell me how many people are involved and whether the EV has smoke, fire, or battery heat near $location.';
+    }
+    return 'I’m here with you. Please tell me how many people are involved, whether everyone can exit the EV, and if there is any smoke, fire, or battery heat.';
   }
 
   static String _messagePreview(Map<String, dynamic> message) {
