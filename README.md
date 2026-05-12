@@ -1,210 +1,217 @@
 # EVSmart+
 
-EVSmart+ is a Flutter and Firebase final-year prototype for electric vehicle safety, emergency response, charging support, and connected dashboards.
+EVSmart+ is a Flutter and Firebase final-year prototype for EV safety monitoring, impact-driven emergency response, charging support, connected messaging, and live dashboard reporting.
 
-The project is designed around one main idea:
+The project is built around two connected systems:
 
-- an EV driver may need more than a normal car app after an accident
-- the system should understand EV-related risk such as battery condition, charging dependency, and EV-specific roadside support
-- serious cases should appear quickly on responder dashboards
+- a driver and responder app for EV users, ambulance staff, and operational workflows
+- a government-style accident analytics and AI report dashboard that turns collected EV incident data into summaries, hotspot views, and recommendations
 
-This repository contains the mobile app, the Flutter web app/PWA, and a separate lightweight static dashboard.
+## Live Links
 
-## What The App Does
+- Netlify Flutter web app: [https://evsmartplus.netlify.app/](https://evsmartplus.netlify.app/)
+- GitHub Pages dashboard: [https://khinphyucinhtet.github.io/ev_smart_plus_dashboard/?role=hospital](https://khinphyucinhtet.github.io/ev_smart_plus_dashboard/?role=hospital)
 
-EVSmart+ can:
+## System Overview
 
-- show a driver-focused EV dashboard
-- simulate EV connection and cloud updates
-- monitor or simulate impact events
-- trigger manual alert or SOS flows
-- send Level 4 and Level 5 emergency cases to responder dashboards
-- help the user find nearby EV charging stations
-- help the user contact nearby hospitals or EV technicians
-- let the driver send messages and vehicle photos
-- let ambulance responders accept, travel to, arrive at, and close cases
-- show hospital and insurance visibility through dashboards
-- run as a Flutter web app for demos and hosting
+### 1. EV Driver And Responder App
 
-## Main User Roles
+This is the main Flutter product. It supports:
 
-The project mainly revolves around these roles:
+- EV dashboard simulation
+- EV connection flow
+- battery, tire, temperature, GPS, and sync-style monitoring
+- impact detection and manual alerts
+- ambulance responder workflow
+- nearby charging station support
+- nearby hospital and technician assistance
+- support messaging and image sending
+- rewards and donation demo flows
 
-- Driver
-- Ambulance or health responder
-- Hospital dashboard viewer
-- Insurance dashboard viewer
+### 2. Accident Report And Government Dashboard
 
-Technician support is included too, but it is mostly handled as nearby workshop listings plus AI-style chat instead of a fully separate technician account flow.
+This is the analytics/reporting side of the project. It uses EV incident data gathered from the app to show:
 
-## High-Level System Flow
+- hospital dashboard mode
+- insurance dashboard mode
+- `Accidents Report` mode
+- district hotspot maps
+- most affected districts
+- severity and peak-hour breakdowns
+- AI report generator and suggestion cards
+- government-style operational summaries
 
-Here is the main story of the app in simple English:
+The hosted version of this dashboard is maintained in the sibling repo:
 
-1. The EV driver opens the app and connects the EV demo.
-2. The driver dashboard shows battery, range, temperature, tire, location, and cloud sync style information.
-3. If the phone detects a strong impact, or the user triggers a manual alert, EVSmart+ creates an alert.
-4. Level 1 to Level 3 cases can stay as lower-severity records, service support, or insurance visibility.
-5. Level 4 and Level 5 cases are treated as serious emergency cases.
-6. Those serious cases are saved to Firebase Realtime Database.
-7. Ambulance and hospital views read the same Firebase data and update in real time.
-8. The ambulance responder can press `Going`, submit a response form, watch trip progress, press `Arrived`, and then submit a final report.
-9. The final report updates the shared case information for dashboards.
-10. The driver can also use charging support, nearby hospitals, nearby EV technicians, messages, and rewards.
+- `C:\Users\user\AndroidStudioProjects\ev_smart_plus_dashboard`
 
-## EV IoT Data Flow
+This repository also contains an in-project static dashboard copy in:
 
-The app explains EV data like this:
+- `static_dashboard/`
 
-1. Sensor input:
-Battery, tire, GPS, impact, and temperature data are collected.
+## Main Idea
 
-2. Gateway processing:
-A gateway such as ESP32, OBD-II reader, CAN reader, or BMS bridge can process raw data.
+EVSmart+ is not a general car app.
 
-3. Cloud sync:
-The app simulates regular sync to Firebase for live monitoring.
+It focuses on EV-specific incident handling where the system needs to consider:
 
-4. Intelligent action:
-The system decides whether the case is a normal update, a service issue, or a real emergency.
+- impact severity
+- EV battery condition
+- charging dependency
+- location context
+- roadside support availability
+- responder readiness
+- dashboard visibility for hospitals, insurance viewers, and report audiences
 
-For this prototype, much of the EV data is simulated in Flutter, but the product story is that real EV sensors or EV gateway hardware could send the same data.
+## Technologies Used
 
-## Mobile App Sections
+### Flutter App
 
-### Driver App
+- Flutter
+- Dart
+- Firebase Core
+- Firebase Auth
+- Firebase Realtime Database
+- Firebase Messaging
+- Shared Preferences
+- Geolocator
+- Flutter Map
+- Google Maps Flutter
+- URL Launcher
+- Sensors Plus
+- Image Picker
+- HTTP
+- Flutter TTS
+- Local Auth
+- Flutter Local Notifications
 
-The main driver experience includes:
+### Native / Web
 
-- `home_driver.dart`
-- `charge.dart`
-- `alert.dart`
-- `noti.dart`
-- `rewards.dart`
-- `report_problem.dart`
-- `user_message.dart`
-- `message_conversation_page.dart`
+- Kotlin for Android-native impact monitoring
+- HTML, CSS, and JavaScript for the static dashboard
+- Leaflet for dashboard mapping
+- html2canvas and jsPDF for report/export features in the hosted dashboard
 
-What these pages do:
+## Repository Structure
 
-- `home_driver.dart`
-Shows the main EV dashboard, EV connection popup, support cards, sensor cards, IoT architecture view, and action shortcuts.
+- `lib/`
+  Main Flutter source code.
+- `lib/screens/`
+  Screen-level UI such as driver, responder, and dashboard pages.
+- `lib/services/`
+  Firebase access, impact logic, notifications, assist data, AI helpers, and web monitoring.
+- `lib/widgets/`
+  Reusable widgets shared by multiple screens.
+- `android/`
+  Android-native Kotlin files for impact monitoring and app integration.
+- `assets/images/`
+  App image assets and icons.
+- `test/`
+  Flutter tests.
+- `web/`
+  Flutter web shell files.
+- `static_dashboard/`
+  Lightweight static dashboard copy stored inside this repo.
+- `build/web/`
+  Generated Flutter web output after running a web build.
 
-- `charge.dart`
-Shows nearby EV charging station content and map-related charging support.
+## Important Screens And What They Do
 
-- `alert.dart`
-Handles manual alert testing, impact severity flows, countdown confirmation, and emergency simulation.
+### Driver Experience
 
-- `noti.dart`
-Shows driver notifications, alert history, and message-style event cards.
+- `lib/screens/home_driver.dart`
+  Main EV dashboard with EV connection popup, sensor cards, support sections, and quick actions.
+- `lib/screens/charge.dart`
+  Charging support page with nearby charger and map-related content.
+- `lib/screens/alert.dart`
+  Manual emergency alert and severity flow.
+- `lib/screens/noti.dart`
+  Driver notifications and alert history.
+- `lib/screens/rewards.dart`
+  Rewards, check-in, donation, and mission demo content.
+- `lib/screens/report_problem.dart`
+  Support chatbot and problem-reporting screen.
+- `lib/screens/user_message.dart`
+  Messaging inbox entry point.
+- `lib/screens/message_conversation_page.dart`
+  Actual message thread UI with image support.
+- `lib/screens/nearby_assist_map.dart`
+  Nearby hospital and EV technician assist map.
+- `lib/screens/view_profile.dart`
+  Driver profile page.
+- `lib/screens/edit_profile.dart`
+  Driver profile editing page.
 
-- `rewards.dart`
-Shows rewards, donation options, check-in logic, and demo engagement content.
+### Ambulance / Health Responder Experience
 
-- `report_problem.dart`
-Shows the EVSmart+ support chat UI with report issue flow, problem form, and quick support topics.
+- `lib/screens/health_home.dart`
+  Main responder home with live incident feed and active case summary.
+- `lib/screens/ambulance_response_form_page.dart`
+  Dispatch response form shown after `Going`.
+- `lib/screens/ambulance_trip_progress.dart`
+  Trip progress simulation until arrival.
+- `lib/screens/ambulance_driver_messages.dart`
+  Responder-side messages and support entry.
+- `lib/screens/ambulance_profile.dart`
+  Responder profile page.
+- `lib/screens/ambulance_driver_edit_profile.dart`
+  Responder profile editing page.
+- `lib/screens/dashboard_ambulance_driver.dart`
+  Dashboard-style responder summary.
 
-- `user_message.dart`
-Acts as the driver inbox entry point for health assist and technician assist.
+### Dashboard / Shared Monitoring Experience
 
-- `message_conversation_page.dart`
-Shows actual conversation threads and supports photo sending.
-
-### Ambulance / Health Responder App
-
-The main responder experience includes:
-
-- `health_home.dart`
-- `ambulance_response_form_page.dart`
-- `ambulance_trip_progress.dart`
-- `ambulance_driver_messages.dart`
-- `ambulance_profile.dart`
-- `ambulance_driver_edit_profile.dart`
-- `dashboard_ambulance_driver.dart`
-
-What these pages do:
-
-- `health_home.dart`
-Shows nearby emergency feed, active case, case log, location summary, and responder status.
-
-- `ambulance_response_form_page.dart`
-Collects ETA, unit, contact, team size, and notes before dispatch.
-
-- `ambulance_trip_progress.dart`
-Simulates the ambulance trip from 0 percent to 100 percent until arrival.
-
-- `ambulance_driver_messages.dart`
-Provides the responder chat inbox with nearby hospitals and technician-related assist entry.
-
-- `ambulance_profile.dart`
-Shows the responder profile page.
-
-- `dashboard_ambulance_driver.dart`
-Provides a dashboard-style responder summary page.
-
-### Web Dashboards
-
-The project has dashboard-related Flutter pages and a standalone static dashboard:
-
-- `dashboard_router.dart`
-- `ambulance_dashboard.dart`
-- `insurance_dashboard.dart`
+- `lib/screens/dashboard_router.dart`
+  Role-aware dashboard routing.
+- `lib/screens/ambulance_dashboard.dart`
+  Ambulance dashboard presentation.
+- `lib/screens/insurance_dashboard.dart`
+  Insurance dashboard presentation.
 - `lib/widgets/dashboard_layout.dart`
+  Shared dashboard shell layout.
 - `lib/widgets/dashboard_notification_feed.dart`
-- `static_dashboard/`
+  Shared dashboard feed UI.
 
-The dashboards are mainly for:
+## Important Services
 
-- hospital monitoring
-- ambulance response visibility
-- insurance visibility
-- notification-style case review
+- `lib/services/app_repository.dart`
+  Main shared Firebase repository and one of the most important files in the project.
+- `lib/services/impact_detection_service.dart`
+  Flutter-side impact detection and emergency callback logic.
+- `lib/services/android_background_impact_service.dart`
+  Bridge from Flutter to the Android native foreground service.
+- `lib/services/assist_directory.dart`
+  Nearby hospital and EV technician data.
+- `lib/services/notification_service.dart`
+  Notification logic.
+- `lib/services/voice_assistant_service.dart`
+  Voice assistant support logic.
+- `lib/services/gemini_ai_service.dart`
+  Optional Gemini-powered support enhancement.
+- `lib/services/gemini_service.dart`
+  Additional Gemini helper service logic.
+- `lib/services/web_monitoring_service.dart`
+  Web-side monitoring support.
 
-## Web App And Static Dashboard
+## Native Android Files
 
-This repository contains two different web experiences.
+Important native files include:
 
-### 1. Flutter Web App
+- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/MainActivity.kt`
+- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/ImpactForegroundService.kt`
+- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/ImpactAlertActivity.kt`
+- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/ImpactMonitorControlActivity.kt`
 
-This is the full EVSmart+ app compiled for the browser.
+These handle:
 
-It includes:
+- Android app startup
+- background impact listening
+- emergency popup behavior
+- pause/resume monitoring controls
 
-- driver pages
-- responder-related pages
-- shared Flutter UI
-- same theme and logic as the mobile app where supported
+## Firebase Data Paths
 
-Important note:
-
-- Android-only background monitoring does not behave the same way on web
-- the web build is more suitable for location-first demo flows, manual alert actions, dashboard access, and presentation use
-
-The Flutter web build output is:
-
-- `build/web`
-
-This is the folder you upload to Netlify.
-
-### 2. Static Dashboard
-
-This is a separate HTML/CSS/JavaScript dashboard in:
-
-- `static_dashboard/`
-
-It is lighter than the Flutter app and is useful when you only want a dashboard webpage without loading the whole Flutter application.
-
-It can be hosted separately on:
-
-- GitHub Pages
-- Netlify
-- Firebase Hosting
-- any static host
-
-## Firebase Data Flow
-
-The main Firebase Realtime Database paths used by the project are:
+Main Firebase Realtime Database paths used by the project:
 
 - `alerts`
 - `notifications`
@@ -214,119 +221,27 @@ The main Firebase Realtime Database paths used by the project are:
 - `technician_profiles`
 - `charging_stations`
 
-How the data moves:
+## End-To-End Data Flow
 
-1. The user triggers an alert, sends a message, opens support, or updates EV-related state.
-2. Flutter screens prepare structured data such as severity, location, timestamps, status, and notes.
-3. `lib/services/app_repository.dart` reads and writes most shared Firebase data.
-4. Ambulance, hospital, and insurance views listen to the same Firebase data.
-5. The UI refreshes automatically through streams and repository calls.
+1. The EV driver connects the EV demo and views vehicle-style telemetry.
+2. The app continuously collects or simulates EV data such as impact, battery, GPS, and temperature.
+3. If an impact event or manual alert occurs, EVSmart+ classifies the case severity.
+4. Level 4 and Level 5 incidents are written to Firebase as serious emergency cases.
+5. Hospital, insurance, and responder interfaces read the same live data.
+6. The responder can accept the incident, submit dispatch details, arrive, and complete a final report.
+7. The analytics/report dashboard continues aggregating the EV user data to show district hotspots, top affected areas, severity distribution, and AI-style report suggestions.
 
-## Main Services
+## Main User Flows
 
-The app currently has 9 Dart service files in `lib/services/`.
+### Driver Flow
 
-Important ones are:
+1. Open app
+2. Connect EV
+3. View EV status cards
+4. Trigger manual alert or simulate impact
+5. Use charging support, messaging, or nearby assist
 
-- `app_repository.dart`
-Main Firebase and shared app data layer.
-
-- `impact_detection_service.dart`
-Flutter-side impact detection using accelerometer input and emergency callbacks.
-
-- `android_background_impact_service.dart`
-Flutter bridge to the native Android foreground service.
-
-- `assist_directory.dart`
-Stores nearby hospital and EV technician style data used in support flows.
-
-- `notification_service.dart`
-Handles notification-related logic.
-
-- `voice_assistant_service.dart`
-Supports voice-related assistant features where used.
-
-- `gemini_ai_service.dart`
-Optional Gemini-powered replies when a key is supplied.
-
-- `web_monitoring_service.dart`
-Web-related monitoring support.
-
-## Native Android Side
-
-The Android side includes 4 Kotlin files.
-
-These handle Android-specific features such as:
-
-- background impact monitoring
-- foreground service behavior
-- outside-app emergency alert display
-- pause or resume control activity
-
-Important native files:
-
-- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/ImpactForegroundService.kt`
-- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/ImpactAlertActivity.kt`
-- `android/app/src/main/kotlin/com/evsmart/plus/evsmart_plus/ImpactMonitorControlActivity.kt`
-
-## Current Codebase Size
-
-Current project counts:
-
-- Total Dart files in `lib/`: 57
-- Screen-related Dart files in `lib/screens/`: 42
-- Service Dart files in `lib/services/`: 9
-- Shared widget Dart files in `lib/widgets/`: 4
-- Kotlin files in `android/`: 4
-- Asset files in `assets/`: 18
-- Static dashboard files in `static_dashboard/`: 6
-
-## Shared UI Structure
-
-Some reusable UI files already exist:
-
-- `lib/screens/app_header.dart`
-- `lib/screens/app_footer.dart`
-- `lib/widgets/info_card.dart`
-- `lib/widgets/severity_badge.dart`
-- `lib/widgets/dashboard_layout.dart`
-- `lib/widgets/dashboard_notification_feed.dart`
-
-The main driver footer is now shared across:
-
-- `home_driver.dart`
-- `charge.dart`
-- `alert.dart`
-- `noti.dart`
-- `rewards.dart`
-
-This helps keep the bottom navigation consistent across more device sizes, including narrow devices and foldable screens.
-
-## Important Feature Highlights
-
-### EV Connection Demo
-
-The driver can press `Connect EV` and see a connected popup showing:
-
-- selected EV
-- connection method
-- connected sensor types
-- cloud sync status
-- refresh interval
-
-### Impact Detection
-
-The project supports:
-
-- phone accelerometer simulation
-- manual impact testing
-- Android background monitoring
-
-Level 4 and Level 5 are the most important emergency levels.
-
-### Ambulance Response Flow
-
-The responder flow is:
+### Responder Flow
 
 1. View nearby case
 2. Press `Going`
@@ -334,53 +249,75 @@ The responder flow is:
 4. Watch trip progress
 5. Press `Arrived`
 6. Submit final report
-7. Close the case
 
-### Support And Messaging
+### Government / Report Flow
 
-The app supports:
+1. Open hosted dashboard
+2. Switch to `Accidents Report`
+3. Review Selangor risk overview and district ranking
+4. Check severity, trend, and peak-hour cards
+5. Generate AI report and suggestions for dashboard planning
 
-- nearby hospitals
-- nearby EV technicians
-- technician AI-style support chat
-- hospital messaging
-- support chatbot for reporting app problems
+## Web Experiences
 
-### Rewards And Donations
+### Flutter Web App
 
-The rewards area is included for:
+The Flutter web app is mostly the same product story as the APK, but used more for simulation, hosted presentation, and browser access.
 
-- daily demo activity
-- check-in points
-- mission progress
-- donation causes
+Useful for:
+
+- demos
+- manual alert simulation
+- support and messaging walkthroughs
+- dashboard access in web form
+
+Build output:
+
+- `build/web`
+
+### Static Dashboard
+
+The static dashboard is a lighter dashboard-only experience built with HTML, CSS, and JavaScript.
+
+Useful for:
+
+- hospital view
+- insurance view
+- accident report analytics
+- lightweight public/project presentation
 
 ## Platform Notes
 
 ### Android
 
-Best platform for the full prototype because it supports:
+Best for the full prototype because it supports:
 
-- background impact monitoring
-- foreground service
-- emergency-style notification behavior
-- better device integration for the demo
+- accelerometer simulation
+- foreground-service monitoring
+- stronger background behavior
+- emergency popup style interactions
 
-### iPhone / PWA
+### Web / PWA
 
-The app can still run as a web app or PWA, but:
+Best for:
 
-- it does not support the same Android native background service flow
-- some notification or continuous monitoring behavior may be limited
+- hosted demo links
+- Netlify sharing
+- dashboard-style presentation
+- simulation of the same product story as the APK
 
-### Web
+But web does not behave exactly like the Android-native background monitoring experience.
 
-Good for:
+## Shared UI
 
-- demo hosting
-- presentation sharing
-- dashboard access
-- lightweight manual alert or support flows
+Reusable UI files include:
+
+- `lib/screens/app_header.dart`
+- `lib/screens/app_footer.dart`
+- `lib/widgets/info_card.dart`
+- `lib/widgets/severity_badge.dart`
+- `lib/widgets/dashboard_layout.dart`
+- `lib/widgets/dashboard_notification_feed.dart`
 
 ## Run Commands
 
@@ -404,73 +341,68 @@ Optional model override:
 flutter run --dart-define=GEMINI_API_KEY=YOUR_KEY --dart-define=GEMINI_MODEL=gemini-2.5-flash
 ```
 
-## Netlify Deployment
+## Hosting
 
-To deploy the full Flutter web app to Netlify:
+### Netlify Flutter Web App
 
-1. Run:
+Build:
 
 ```bash
 flutter build web --release
 ```
 
-2. Upload:
+Publish directory:
 
 - `build/web`
 
-Do not upload:
+Hosted link:
 
-- the project root
-- only the `web/` source folder
+- [https://evsmartplus.netlify.app/](https://evsmartplus.netlify.app/)
 
-Recommended Netlify settings:
+### GitHub Pages Dashboard
 
-- Build command: `flutter build web --release`
-- Publish directory: `build/web`
+Hosted link:
 
-## Static Dashboard Local Test
+- [https://khinphyucinhtet.github.io/ev_smart_plus_dashboard/?role=hospital](https://khinphyucinhtet.github.io/ev_smart_plus_dashboard/?role=hospital)
 
-To test the static dashboard:
+The deployed files for that site are in the separate repo:
+
+- `C:\Users\user\AndroidStudioProjects\ev_smart_plus_dashboard`
+
+## Local Static Dashboard Test
 
 ```bash
 cd static_dashboard
 python -m http.server 8088
 ```
 
-Then open:
-
-- `http://localhost:8088`
-
 Example role links:
 
-- Hospital: `index.html?role=hospital`
-- Insurance: `index.html?role=insurance`
+- `index.html?role=hospital`
+- `index.html?role=insurance`
 
-## Demo Script
+## Recommended Demo Script
 
-1. Open the app and allow location, notification, and impact-related permissions.
+1. Open the Android app and allow location, notifications, and impact-related permissions.
 2. Open the driver home page.
 3. Press `Connect EV`.
-4. Show battery, range, cloud sync, and sensor cards.
-5. Trigger a manual alert or impact flow.
-6. Show how the alert goes to Firebase.
-7. Open the ambulance side and show nearby emergency notifications.
-8. Press `Going` and submit the response form.
-9. Let the trip progress screen reach arrival.
-10. Press `Arrived`.
-11. Submit the responder report.
-12. Show the hospital or insurance dashboard updating.
-13. Open support messages or nearby technician help.
-14. Show charging support or rewards if needed.
+4. Show battery, range, temperature, cloud sync, GPS, and impact cards.
+5. Trigger a manual alert or impact simulation.
+6. Show Firebase alert creation and live data flow.
+7. Open the responder side and show nearby incident visibility.
+8. Press `Going`, fill the form, and show trip progress.
+9. Submit the final responder report.
+10. Open the hosted dashboard and show how the same EV user data appears in hospital/insurance/report views.
+11. Open `Accidents Report` and generate the AI-style analytics summary.
 
-## Current Limitations
+## Known Limitations
 
-- Accelerometer data is used as an IoT-style demo signal, not a real EV crash sensor.
-- Android background popups can depend on device settings and OS restrictions.
-- Web and iPhone/PWA do not behave the same as Android background service mode.
-- Gemini AI is optional and should not be hardcoded in source.
-- Some flows are prototype or demo flows rather than production-ready systems.
+- Accelerometer input is used as an IoT-style demo signal rather than a real EV crash sensor.
+- Some workflows are prototype/demo flows rather than production-ready emergency systems.
+- Android popup behavior can vary by device and OS restrictions.
+- Web and iPhone/PWA do not replicate Android-native background monitoring exactly.
+- Gemini should remain optional and must not be hardcoded.
 
 ## Summary
 
-EVSmart+ is a connected EV safety and emergency-response prototype. It combines EV monitoring, impact handling, nearby help, ambulance workflow, messaging, charging support, rewards, and dashboards inside one Firebase-connected Flutter project.
+EVSmart+ combines EV monitoring, impact handling, ambulance workflow, nearby support, messaging, charging support, and dashboard analytics in one Firebase-connected prototype. The Flutter app and the government-style report dashboard are designed to tell the same data story from different user viewpoints.
