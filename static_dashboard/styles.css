@@ -4196,3 +4196,369 @@ body.report-mode .trend-action-bar {
     justify-content: stretch;
   }
 }
+
+@media (max-width: 1024px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .main {
+    padding: 22px 18px;
+    overflow-x: hidden;
+  }
+
+  .main > .topbar,
+  .main > section,
+  .panel,
+  .report-map-card,
+  .report-summary-card,
+  .report-insights-card,
+  .trend-panel,
+  .top-risk-panel {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .topbar {
+    gap: 14px;
+  }
+
+  .topbar-copy,
+  .topbar-subrow,
+  .hospital-header-actions,
+  .insurance-header-actions,
+  .report-utility {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel,
+  .report-map-card,
+  .report-summary-card,
+  .report-insights-card,
+  .trend-panel,
+  .top-risk-panel,
+  .trend-stat-card,
+  .analysis-output-card {
+    height: auto;
+    min-height: auto;
+  }
+
+  .report-overview-layout,
+  .report-map-layout,
+  .trend-analytics-grid,
+  .analysis-output-card,
+  .region-analysis-shell,
+  .region-analysis-hero,
+  .severity-donut-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-main-panel,
+  .trend-bar-panel,
+  .trend-severity-panel,
+  .trend-split-panel,
+  .trend-heatmap-panel,
+  .trend-weekday-panel,
+  .trend-focus-panel {
+    grid-column: auto;
+    min-height: auto;
+  }
+
+  .trend-stat-strip,
+  .risk-split-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-map,
+  body.report-mode .report-map {
+    min-height: 360px;
+    height: auto;
+  }
+
+  .top-risk-panel,
+  body.report-mode .top-risk-panel {
+    align-self: start;
+    overflow: visible;
+  }
+
+  .risk-distribution,
+  body.report-mode .risk-distribution {
+    height: auto;
+    min-height: auto;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .top-risk-chart,
+  body.report-mode .trend-bar-panel .top-risk-chart,
+  .trend-chart,
+  .weekday-trend-chart,
+  .severity-distribution-card,
+  .heatmap-card {
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: auto;
+  }
+
+  .region-chip-row,
+  body.report-mode .region-chip-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .main {
+    padding: 16px;
+  }
+
+  .topbar,
+  .topbar-subrow,
+  .panel-head,
+  .report-map-head,
+  .trend-head,
+  .trend-head-actions,
+  .insights-head {
+    display: block;
+  }
+
+  .actions,
+  .hospital-action-buttons,
+  .insurance-action-buttons {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .metrics,
+  body.hospital-mode .metrics,
+  body.insurance-mode .metrics,
+  body.report-mode .metrics,
+  .trend-stat-strip,
+  .risk-split-grid,
+  .advanced-insights-grid,
+  .ai-insight-grid,
+  .suggestion-metrics,
+  .sample-report-metrics,
+  .future-prediction-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .panel,
+  .report-summary-card,
+  .report-insights-card,
+  .trend-panel,
+  .analysis-output-card,
+  .report-preview-card,
+  body.report-mode #reportPanel {
+    padding: 16px;
+  }
+
+  .report-map-layout,
+  .report-bottom-stack,
+  .trend-analytics-grid,
+  .analysis-output-card,
+  .region-analysis-shell,
+  .region-analysis-hero,
+  .severity-donut-wrap,
+  .focus-facts-grid,
+  .focus-facts-grid-standalone,
+  .sample-preview-toolbar,
+  .sample-report-top,
+  .sample-report-summary,
+  .sample-report-two-col,
+  .advanced-insights-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .report-map,
+  body.report-mode .report-map {
+    min-height: 300px;
+  }
+
+  .region-chip-row,
+  body.report-mode .region-chip-row {
+    grid-template-columns: 1fr;
+  }
+
+  .region-chip {
+    padding: 12px;
+  }
+
+  .top-risk-panel,
+  body.report-mode .top-risk-panel {
+    padding: 16px;
+    border-radius: 18px;
+    height: auto;
+    min-height: auto;
+    overflow: visible;
+  }
+
+  .top-risk-panel-head,
+  .trend-panel-head {
+    margin-bottom: 10px;
+  }
+
+  .risk-distribution,
+  body.report-mode .risk-distribution {
+    gap: 12px;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+  }
+
+  .top-risk-chart,
+  body.report-mode .trend-bar-panel .top-risk-chart {
+    min-height: 420px;
+  }
+
+  .trend-chart {
+    min-height: 260px;
+  }
+
+  .weekday-trend-chart {
+    min-height: 220px;
+  }
+
+  .heatmap-card,
+  .severity-distribution-card {
+    min-height: auto;
+  }
+
+  .trend-panel-head h4,
+  body.report-mode .trend-panel-head h4 {
+    font-size: 17px;
+  }
+
+  .trend-panel-head p,
+  body.report-mode .trend-panel-head p,
+  .panel-head p,
+  .report-summary-card p {
+    font-size: 12px;
+  }
+
+  .report-map-head h3,
+  .report-summary-card h3,
+  .trend-card h3 {
+    font-size: 20px;
+  }
+
+  .trend-stat-card strong {
+    font-size: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    overflow-x: hidden;
+  }
+
+  .main {
+    padding: 14px;
+  }
+
+  .app-header,
+  .app-footer,
+  .panel,
+  .report-summary-card,
+  .report-insights-card,
+  .trend-panel,
+  .analysis-output-card,
+  body.report-mode #reportPanel {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .panel,
+  .report-map-card,
+  .report-summary-card,
+  .report-insights-card,
+  .trend-panel,
+  .top-risk-panel {
+    border-radius: 18px;
+  }
+
+  .topbar-copy h1,
+  .report-map-head h3,
+  .report-summary-card h3,
+  .trend-card h3 {
+    font-size: 18px;
+  }
+
+  .topbar-copy p,
+  .panel-head p,
+  .report-summary-card p,
+  .trend-panel-head p {
+    font-size: 11px;
+    line-height: 1.5;
+  }
+
+  .metrics article {
+    padding: 14px;
+  }
+
+  .metrics strong,
+  .trend-stat-card strong,
+  .risk-split-card strong {
+    font-size: 18px;
+  }
+
+  .trend-panel-head h4,
+  body.report-mode .trend-panel-head h4 {
+    font-size: 15px;
+  }
+
+  .report-map,
+  body.report-mode .report-map {
+    min-height: 260px;
+  }
+
+  .top-risk-chart,
+  body.report-mode .trend-bar-panel .top-risk-chart {
+    min-height: 360px;
+  }
+
+  .trend-chart {
+    min-height: 220px;
+  }
+
+  .weekday-trend-chart {
+    min-height: 200px;
+  }
+
+  .severity-donut {
+    width: 120px;
+    height: 120px;
+  }
+
+  .severity-donut-center {
+    inset: 18px;
+  }
+
+  .severity-donut-center strong {
+    font-size: 22px;
+  }
+
+  .risk-pill,
+  body.report-mode .risk-pill,
+  .severity-legend-item,
+  .trend-stat-card,
+  .risk-split-card,
+  .focus-fact {
+    padding: 12px;
+  }
+
+  .heatmap-cell {
+    height: 16px;
+  }
+}
