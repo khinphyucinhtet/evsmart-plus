@@ -37,7 +37,12 @@ let strategicInsightsLoading = false;
 let strategicLoadingTimer = null;
 let activeTrendRange = "7";
 let activeTrendRegion = "all";
-let activeSuggestionTab = "summary";
+let aiReportPreviewState = {
+  visible: false,
+  region: null,
+  range: null,
+  generatedAt: null,
+};
 let sampleReportState = {
   region: "shah-alam",
   range: "7",
@@ -609,6 +614,7 @@ const els = {
   trendPeakDay: document.querySelector("#trendPeakDay"),
   trendPeakMeta: document.querySelector("#trendPeakMeta"),
   generateStatus: document.querySelector("#generateStatus"),
+  generateRegionReportBtn: document.querySelector("#generateRegionReportBtn"),
   strategicAnalysisBtnText: document.querySelector("#strategicAnalysisBtnText"),
   reportBanner: document.querySelector("#reportBanner"),
   reportBannerText: document.querySelector("#reportBannerText"),
@@ -627,6 +633,28 @@ const els = {
   strategicLoadingStream: document.querySelector("#strategicLoadingStream"),
   reportPreviewPeriod: document.querySelector("#reportPreviewPeriod"),
   reportPreviewTime: document.querySelector("#reportPreviewTime"),
+  reportSelectedRegion: document.querySelector("#reportSelectedRegion"),
+  reportRiskLevel: document.querySelector("#reportRiskLevel"),
+  reportConfidence: document.querySelector("#reportConfidence"),
+  reportPreviewRegionBadge: document.querySelector("#reportPreviewRegionBadge"),
+  aiReportPreviewCard: document.querySelector("#aiReportPreviewCard"),
+  aiReportPreviewEmpty: document.querySelector("#aiReportPreviewEmpty"),
+  reportExecutiveSummary: document.querySelector("#reportExecutiveSummary"),
+  reportPotentialCausesText: document.querySelector("#reportPotentialCausesText"),
+  reportPotentialSolutionsText: document.querySelector("#reportPotentialSolutionsText"),
+  reportPrediction24h: document.querySelector("#reportPrediction24h"),
+  reportPrediction7d: document.querySelector("#reportPrediction7d"),
+  reportResponsePlanText: document.querySelector("#reportResponsePlanText"),
+  reportInsightRiskTrend: document.querySelector("#reportInsightRiskTrend"),
+  reportInsightRiskTrendMeta: document.querySelector("#reportInsightRiskTrendMeta"),
+  reportInsightHotspotMovement: document.querySelector("#reportInsightHotspotMovement"),
+  reportInsightHotspotMovementMeta: document.querySelector("#reportInsightHotspotMovementMeta"),
+  reportInsightResponseReadiness: document.querySelector("#reportInsightResponseReadiness"),
+  reportInsightResponseReadinessMeta: document.querySelector("#reportInsightResponseReadinessMeta"),
+  reportInsightEnforcementImpact: document.querySelector("#reportInsightEnforcementImpact"),
+  reportInsightEnforcementImpactMeta: document.querySelector("#reportInsightEnforcementImpactMeta"),
+  reportInsightPublicAdvisoryReach: document.querySelector("#reportInsightPublicAdvisoryReach"),
+  reportInsightPublicAdvisoryReachMeta: document.querySelector("#reportInsightPublicAdvisoryReachMeta"),
   reportDatasetScope: document.querySelector("#reportDatasetScope"),
   reportDataPoints: document.querySelector("#reportDataPoints"),
   reportPrediction: document.querySelector("#reportPrediction"),
@@ -733,12 +761,9 @@ els.exportPdfBtn?.addEventListener("click", exportStrategicReportPdf);
 els.shareReportBtn?.addEventListener("click", shareStrategicReport);
 els.sendHospitalBtn?.addEventListener("click", sendStrategicReportToHospital);
 els.generateBriefingBtn?.addEventListener("click", generateStrategicBriefing);
+els.generateRegionReportBtn?.addEventListener("click", generateRegionReport);
 els.trendRegionFilter?.addEventListener("change", () => {
-  const selected = els.trendRegionFilter.value || "all";
-  activeTrendRegion = selected;
-  if (selected !== "all" && reportZones[selected]) {
-    activeZone = selected;
-  }
+  activeTrendRegion = els.trendRegionFilter.value || "all";
   renderReportZone();
 });
 els.focusRegionSelect?.addEventListener("change", () => {
@@ -747,15 +772,6 @@ els.focusRegionSelect?.addEventListener("change", () => {
     activeZone = selected;
     renderReportZone();
   }
-});
-document.querySelectorAll("[data-suggestion-tab]").forEach((button) => {
-  button.addEventListener("click", () => {
-    activeSuggestionTab = button.dataset.suggestionTab || "summary";
-    document.querySelectorAll("[data-suggestion-tab]").forEach((item) => {
-      item.classList.toggle("active", item.dataset.suggestionTab === activeSuggestionTab);
-    });
-    renderStrategicInsights();
-  });
 });
 document.querySelectorAll("[data-sample-range]").forEach((button) => {
   button.addEventListener("click", () => {
@@ -961,7 +977,6 @@ function render() {
   updateInsuranceControls(visible);
   if (reportMode) {
     initializeSelangorMap();
-    initializeSampleReportControls();
     if (!reportGeneratedAt) {
       refreshReportData({ showBanner: false });
     } else {
@@ -1018,16 +1033,359 @@ function renderReportZone() {
   renderReportUpdatedBadge();
   els.regionChips.innerHTML = regionChipsMarkup();
   els.riskDistribution.innerHTML = riskDistributionMarkup();
-  els.generateStatus.textContent = reportGeneratedAt
-    ? `Auto-updated at ${formatTime(reportGeneratedAt)}`
-    : "Auto-refresh ready";
   renderTrendMetrics(zone);
-  renderStrategicInsights();
+  renderRegionAnalysis(zone);
+  renderAiReportShell(zone);
   bindRegionChips();
   bindRiskCards();
   renderTrendChart();
   renderWeekdayTrendChart();
   updateMapVisuals();
+}
+
+function renderRegionAnalysis(zone) {
+  if (!els.zoneNarrative) {
+    return;
+  }
+  els.zoneNarrative.textContent = zone.narrative;
+}
+
+function markAiReportStale() {
+  const zone = reportZones[activeZone] || reportZones["shah-alam"];
+  const metrics = buildReportMetricProfile(activeZone, activeTrendRange);
+  const stillCurrent =
+    aiReportPreviewState.visible &&
+    aiReportPreviewState.region === activeZone &&
+    aiReportPreviewState.range === activeTrendRange;
+
+  if (els.reportPreviewPeriod) {
+    els.reportPreviewPeriod.textContent = trendRangeLabel(activeTrendRange);
+  }
+  if (els.reportSelectedRegion) {
+    els.reportSelectedRegion.textContent = zone.title;
+  }
+  if (els.reportPreviewRegionBadge) {
+    els.reportPreviewRegionBadge.textContent = zone.title;
+  }
+  if (els.reportRiskLevel) {
+    els.reportRiskLevel.textContent = metrics.riskLevel;
+  }
+  if (els.reportConfidence) {
+    els.reportConfidence.textContent = `${metrics.confidence}%`;
+  }
+  if (els.reportPreviewTime) {
+    els.reportPreviewTime.textContent = stillCurrent && aiReportPreviewState.generatedAt
+      ? formatDate(aiReportPreviewState.generatedAt)
+      : "Awaiting generation";
+  }
+  if (els.generateStatus) {
+    els.generateStatus.textContent = stillCurrent
+      ? `Generated for ${zone.title}`
+      : `Ready to generate for ${zone.title}`;
+  }
+  if (els.aiReportPreviewCard) {
+    els.aiReportPreviewCard.classList.toggle("hidden", !stillCurrent);
+  }
+  if (els.aiReportPreviewEmpty) {
+    els.aiReportPreviewEmpty.classList.toggle("hidden", stillCurrent);
+  }
+}
+
+function renderAiReportShell(zone) {
+  if (
+    aiReportPreviewState.visible &&
+    aiReportPreviewState.region === activeZone &&
+    aiReportPreviewState.range === activeTrendRange
+  ) {
+    renderGeneratedAiReport(zone);
+    return;
+  }
+  markAiReportStale();
+}
+
+function generateRegionReport() {
+  const zone = reportZones[activeZone] || reportZones["shah-alam"];
+  aiReportPreviewState.visible = true;
+  aiReportPreviewState.region = activeZone;
+  aiReportPreviewState.range = activeTrendRange;
+  aiReportPreviewState.generatedAt = new Date();
+  renderGeneratedAiReport(zone);
+}
+
+function renderGeneratedAiReport(zone) {
+  const profile = buildAiRegionReportProfile(activeZone, activeTrendRange);
+  if (els.reportPreviewPeriod) {
+    els.reportPreviewPeriod.textContent = trendRangeLabel(activeTrendRange);
+  }
+  if (els.reportPreviewTime) {
+    els.reportPreviewTime.textContent = formatDate(aiReportPreviewState.generatedAt || new Date());
+  }
+  if (els.reportSelectedRegion) {
+    els.reportSelectedRegion.textContent = zone.title;
+  }
+  if (els.reportPreviewRegionBadge) {
+    els.reportPreviewRegionBadge.textContent = zone.title;
+  }
+  if (els.reportRiskLevel) {
+    els.reportRiskLevel.textContent = profile.metrics.riskLevel;
+  }
+  if (els.reportConfidence) {
+    els.reportConfidence.textContent = `${profile.metrics.confidence}%`;
+  }
+  if (els.generateStatus) {
+    els.generateStatus.textContent = `Generated at ${formatTime(aiReportPreviewState.generatedAt || new Date())}`;
+  }
+  if (els.reportExecutiveSummary) {
+    els.reportExecutiveSummary.textContent = profile.executiveSummary;
+  }
+  if (els.reportPotentialCausesText) {
+    els.reportPotentialCausesText.textContent = profile.potentialCauses;
+  }
+  if (els.reportPotentialSolutionsText) {
+    els.reportPotentialSolutionsText.textContent = profile.potentialSolutions;
+  }
+  if (els.reportPrediction24h) {
+    els.reportPrediction24h.textContent = profile.next24Hours;
+  }
+  if (els.reportPrediction7d) {
+    els.reportPrediction7d.textContent = profile.next7Days;
+  }
+  if (els.reportResponsePlanText) {
+    els.reportResponsePlanText.textContent = profile.responsePlan;
+  }
+  if (els.reportInsightRiskTrend) {
+    els.reportInsightRiskTrend.textContent = profile.insights.riskTrend.title;
+  }
+  if (els.reportInsightRiskTrendMeta) {
+    els.reportInsightRiskTrendMeta.textContent = profile.insights.riskTrend.meta;
+  }
+  if (els.reportInsightHotspotMovement) {
+    els.reportInsightHotspotMovement.textContent = profile.insights.hotspotMovement.title;
+  }
+  if (els.reportInsightHotspotMovementMeta) {
+    els.reportInsightHotspotMovementMeta.textContent = profile.insights.hotspotMovement.meta;
+  }
+  if (els.reportInsightResponseReadiness) {
+    els.reportInsightResponseReadiness.textContent = profile.insights.responseReadiness.title;
+  }
+  if (els.reportInsightResponseReadinessMeta) {
+    els.reportInsightResponseReadinessMeta.textContent = profile.insights.responseReadiness.meta;
+  }
+  if (els.reportInsightEnforcementImpact) {
+    els.reportInsightEnforcementImpact.textContent = profile.insights.enforcementImpact.title;
+  }
+  if (els.reportInsightEnforcementImpactMeta) {
+    els.reportInsightEnforcementImpactMeta.textContent = profile.insights.enforcementImpact.meta;
+  }
+  if (els.reportInsightPublicAdvisoryReach) {
+    els.reportInsightPublicAdvisoryReach.textContent = profile.insights.publicAdvisoryReach.title;
+  }
+  if (els.reportInsightPublicAdvisoryReachMeta) {
+    els.reportInsightPublicAdvisoryReachMeta.textContent = profile.insights.publicAdvisoryReach.meta;
+  }
+  if (els.aiReportPreviewCard) {
+    els.aiReportPreviewCard.classList.remove("hidden");
+  }
+  if (els.aiReportPreviewEmpty) {
+    els.aiReportPreviewEmpty.classList.add("hidden");
+  }
+}
+
+function buildAiRegionReportProfile(regionKey, range) {
+  const zone = reportZones[regionKey] || reportZones["shah-alam"];
+  const metrics = buildReportMetricProfile(regionKey, range);
+  const regionalDetail = regionOperationalProfile(zone, metrics);
+  return {
+    metrics,
+    executiveSummary:
+      `${zone.title} is currently assessed as a ${riskLabel(zone.level).toLowerCase()}-risk district for the ${trendRangeLabel(range).toLowerCase()} reporting window, with ${metrics.totalIncidents} simulated incidents and ${zone.criticalPct}% of activity concentrated in Level 4 and Level 5 severity. The pressure remains strongest during ${zone.window}, which shows that commuter demand, access-road merging, and EV travel movement are driving the most sensitive response period for ${zone.title}. Overall, the pattern indicates ${regionalDetail.summaryPressure}.`,
+    potentialCauses:
+      `${regionalDetail.causeLead} The current pattern also suggests ${regionalDetail.causeSupport}, especially when vehicle flow compresses around ${regionalDetail.corridorLabel} during ${zone.window.toLowerCase()}.`,
+    potentialSolutions:
+      `${regionalDetail.solutionLead} A coordinated response should also keep temporary warning signage visible before ${zone.window}, strengthen traffic-flow control near active charging and connector routes, and maintain hospital readiness coordination whenever the critical-share pattern moves above ${zone.criticalPct} percent.`,
+    next24Hours:
+      `${zone.title} is expected to remain ${zone.level === "high" ? "the primary watch zone" : zone.level === "medium" ? "under active monitoring" : "under lighter monitoring"} over the next 24 hours, with the highest likelihood of incident concentration returning during ${zone.window}. If congestion builds early, emergency teams should expect ${regionalDetail.prediction24h}.`,
+    next7Days:
+      `Across the next 7 days, ${zone.title} is projected to maintain ${regionalDetail.weekAheadBand} with repeated pressure around ${regionalDetail.weekAheadFocus}. If current movement continues, planners should expect ${regionalDetail.weekAheadExpectation}.`,
+    responsePlan:
+      `${regionalDetail.responseLead} Monitoring priority should remain on ${regionalDetail.monitoringFocus}, support routes should stay open toward ${regionalDetail.routeFocus}, and lower-risk areas should retain lighter standby coverage so higher-demand districts can absorb additional ambulance and coordination resources without delay.`,
+    insights: {
+      riskTrend: {
+        title: regionalDetail.riskTrendTitle,
+        meta: regionalDetail.riskTrendMeta,
+      },
+      hotspotMovement: {
+        title: regionalDetail.hotspotMovementTitle,
+        meta: regionalDetail.hotspotMovementMeta,
+      },
+      responseReadiness: {
+        title: regionalDetail.responseReadinessTitle,
+        meta: regionalDetail.responseReadinessMeta,
+      },
+      enforcementImpact: {
+        title: regionalDetail.enforcementImpactTitle,
+        meta: regionalDetail.enforcementImpactMeta,
+      },
+      publicAdvisoryReach: {
+        title: regionalDetail.publicAdvisoryReachTitle,
+        meta: regionalDetail.publicAdvisoryReachMeta,
+      },
+    },
+  };
+}
+
+function regionOperationalProfile(zone, metrics) {
+  const title = zone.title;
+  if (title === "Shah Alam") {
+    return {
+      summaryPressure: "a sustained high-pressure load on ambulance dispatch and advisory planning in the western urban corridor",
+      causeLead:
+        "Shah Alam is showing a concentrated evening pattern linked to commuter congestion, industrial access roads, and EV charging-route traffic buildup around major township connectors.",
+      causeSupport:
+        "sudden lane changes and short braking distance are becoming more common when traffic compresses near commercial and administrative approaches",
+      corridorLabel: "Persiaran Kayangan and surrounding city-entry routes",
+      solutionLead:
+        "Government agencies should keep one ambulance unit on early standby near Shah Alam, release pre-peak public advisory alerts, and coordinate traffic officers around the main feeder roads before the evening build-up begins.",
+      prediction24h: "another late-day spike near the main city-entry routes and charging-linked corridors",
+      weekAheadBand: "a high-risk posture",
+      weekAheadFocus: "the evening commuter window and dense township access corridors",
+      weekAheadExpectation: "repeat clustering unless early advisory and lane-discipline measures are reinforced",
+      responseLead:
+        "Ambulance positioning should stay closest to Shah Alam's western connectors, with one rapid-deployment unit prepared before the evening surge and hospital triage teams on higher readiness.",
+      monitoringFocus: "Shah Alam core corridors and adjacent western spillover routes",
+      routeFocus: "Klang and the western urban connector belt",
+      riskTrendTitle: "Increasing",
+      riskTrendMeta: "+6% projected evening pressure for Shah Alam",
+      hotspotMovementTitle: "City-core shift",
+      hotspotMovementMeta: "Pressure remains centered on western township access roads",
+      responseReadinessTitle: "Enhanced standby",
+      responseReadinessMeta: "Pre-stage ambulance coverage 45 minutes before peak window",
+      enforcementImpactTitle: "High value",
+      enforcementImpactMeta: "Lane-discipline enforcement can reduce abrupt merge conflicts",
+      publicAdvisoryReachTitle: "High priority",
+      publicAdvisoryReachMeta: "Push geo-alerts before workers leave the industrial corridor",
+    };
+  }
+  if (title === "Klang") {
+    return {
+      summaryPressure: "a high operational demand across freight-linked and township connector routes",
+      causeLead:
+        "Klang is showing heavy corridor pressure where commuter traffic, port-linked movement, and EV roadside demand overlap near the western district approaches.",
+      causeSupport:
+        "access-road crowding and abrupt weave patterns are raising the chance of severe impact events during late-day movement",
+      corridorLabel: "the main Klang corridor and nearby western feeder roads",
+      solutionLead:
+        "Government teams should keep ambulance standby closer to Klang's western connector belt, strengthen peak-hour advisory messaging, and coordinate warning signage on busy merge points before congestion hardens.",
+      prediction24h: "renewed evening congestion pressure along western connector roads and freight-influenced approaches",
+      weekAheadBand: "a high-risk watch level",
+      weekAheadFocus: "port-linked connectors and township merge points",
+      weekAheadExpectation: "continued late-day spikes unless flow control improves near the busiest approaches",
+      responseLead:
+        "Response planning should prioritize one ambulance standby near the main Klang corridor, maintain open routing toward western hospital links, and hold extra monitoring on high-density access roads.",
+      monitoringFocus: "western connector roads and township merge points",
+      routeFocus: "Shah Alam and the hospital-facing western corridor",
+      riskTrendTitle: "Rising",
+      riskTrendMeta: "Connector demand is staying elevated through the evening cycle",
+      hotspotMovementTitle: "West corridor",
+      hotspotMovementMeta: "Clusters remain near the main Klang connector belt",
+      responseReadinessTitle: "Standby required",
+      responseReadinessMeta: "Keep rapid route clearance ready around freight-heavy approaches",
+      enforcementImpactTitle: "Moderate to high",
+      enforcementImpactMeta: "Targeted merge control can ease severe braking events",
+      publicAdvisoryReachTitle: "Strong need",
+      publicAdvisoryReachMeta: "Advisories should go out before the 6 PM traffic build-up",
+    };
+  }
+
+  const daytimePattern = zone.window.includes("AM")
+    ? "morning commuter and access-road buildup"
+    : "evening commuter congestion and charging-route overlap";
+  const riskDescriptor =
+    zone.level === "high"
+      ? "a firm high-risk watch level"
+      : zone.level === "medium"
+      ? "a managed medium-risk posture"
+      : "a lighter monitoring posture";
+  return {
+    summaryPressure:
+      zone.level === "high"
+        ? "an elevated burden on district response coverage"
+        : zone.level === "medium"
+        ? "a manageable but important demand on local response planning"
+        : "a moderate demand that still benefits from early coordination",
+    causeLead:
+      `${zone.title} is showing a pattern shaped by ${daytimePattern}, with EV traffic concentrating along busy access roads and higher-density travel corridors.`,
+    causeSupport:
+      zone.level === "low"
+        ? "risk remains comparatively controlled, but scattered incidents may still rise when local routes narrow or charging-stop traffic pools together"
+        : "sudden lane changes, delayed braking, and queue spillback are likely contributors when the district reaches its peak window",
+    corridorLabel: `${zone.title}'s main access roads and connector routes`,
+    solutionLead:
+      `Government planners should maintain ${zone.action.toLowerCase()}, prepare public advisory alerts before ${zone.window}, and coordinate traffic-flow support on the district's busiest EV travel routes.`,
+    prediction24h:
+      zone.level === "low"
+        ? "a limited but noticeable return of daytime roadside-support demand"
+        : "another concentrated response window as district traffic peaks again",
+    weekAheadBand: riskDescriptor,
+    weekAheadFocus:
+      zone.level === "low"
+        ? "the district's busiest connector roads"
+        : `${zone.title}'s recurring peak-hour corridors`,
+    weekAheadExpectation:
+      zone.level === "low"
+        ? "short-lived spikes rather than sustained severe clustering"
+        : "repeat pressure during the same peak-hour pattern unless route management improves",
+    responseLead:
+      `Response planning for ${zone.title} should align ambulance visibility with ${zone.window} and keep support teams flexible around the district's most active movement corridors.`,
+    monitoringFocus:
+      zone.level === "low"
+        ? `${zone.title} daytime routes and roadside-support locations`
+        : `${zone.title} peak-hour accident corridors`,
+    routeFocus:
+      zone.level === "low"
+        ? "adjacent regional hospital links"
+        : "the nearest hospital-facing connector and adjacent spillover district",
+    riskTrendTitle:
+      zone.level === "high" ? "Rising" : zone.level === "medium" ? "Watch closely" : "Contained",
+    riskTrendMeta:
+      zone.level === "high"
+        ? `Critical share remains elevated at ${zone.criticalPct}%`
+        : zone.level === "medium"
+        ? `Peak-window monitoring remains most important during ${zone.window}`
+        : `Lower-risk status remains in place, with ${zone.criticalPct}% critical-share monitoring`,
+    hotspotMovementTitle:
+      zone.level === "high" ? "Corridor focused" : zone.level === "medium" ? "Stable" : "Localized",
+    hotspotMovementMeta:
+      zone.level === "high"
+        ? `The main cluster is holding around ${zone.title}'s busiest connector routes`
+        : zone.level === "medium"
+        ? `Pressure is staying within the same district access roads`
+        : `Movement remains scattered with no major district spillover`,
+    responseReadinessTitle:
+      zone.level === "high" ? "Priority standby" : zone.level === "medium" ? "Prepared" : "Routine cover",
+    responseReadinessMeta:
+      zone.level === "high"
+        ? "Keep ambulance staging active before the peak window"
+        : zone.level === "medium"
+        ? "Maintain flexible dispatch with one route kept clear"
+        : "Light standby coverage remains sufficient with active monitoring",
+    enforcementImpactTitle:
+      zone.level === "high" ? "High value" : zone.level === "medium" ? "Moderate" : "Supportive",
+    enforcementImpactMeta:
+      zone.level === "high"
+        ? "Targeted control can reduce queue spillback and unsafe merges"
+        : zone.level === "medium"
+        ? "Temporary signage can improve awareness near key access roads"
+        : "Light enforcement presence should preserve lower-risk conditions",
+    publicAdvisoryReachTitle:
+      zone.level === "high" ? "Immediate" : zone.level === "medium" ? "Targeted" : "Routine",
+    publicAdvisoryReachMeta:
+      zone.level === "high"
+        ? `Issue geo-alerts before ${zone.window} to reduce late peak-hour exposure`
+        : zone.level === "medium"
+        ? `Send region-specific alerts ahead of ${zone.window}`
+        : "Use lighter advisory messaging for scheduled monitoring periods",
+  };
 }
 
 function compareZonesByPriority(a, b) {
@@ -1800,6 +2158,10 @@ function refreshReportData({ showBanner = true, forceBump = false } = {}) {
   }
   randomizeReportData(forceBump);
   reportGeneratedAt = new Date();
+  aiReportPreviewState.visible = false;
+  aiReportPreviewState.region = null;
+  aiReportPreviewState.range = null;
+  aiReportPreviewState.generatedAt = null;
   strategicInsightsReady = true;
   renderReportZone();
   renderMetrics(visibleAlerts(), visibleNotifications(), true);
@@ -2439,12 +2801,14 @@ function renderTopRiskChart() {
   if (!svg) {
     return;
   }
-  const zones = analyticsTopZones(5);
-  const width = 420;
-  const height = 240;
-  const padding = { top: 24, right: 30, bottom: 26, left: 118 };
+  const zones = analyticsTopZones(10);
+  const width = 460;
+  const height = 520;
+  const padding = { top: 34, right: 42, bottom: 34, left: 124 };
   const maxValue = Math.max(...zones.map((zone) => zone.incidentsCount), 10);
-  const rowHeight = 34;
+  const rowHeight = 46;
+  const barHeight = 22;
+  const barRadius = 11;
   const barWidth = width - padding.left - padding.right;
 
   const rows = zones
@@ -2452,18 +2816,17 @@ function renderTopRiskChart() {
       const y = padding.top + index * rowHeight;
       const barLen = (zone.incidentsCount / maxValue) * barWidth;
       return `
-        <text x="${padding.left - 10}" y="${y + 16}" text-anchor="end" class="mini-bar-label">${escapeHtml(zone.title)}</text>
-        <rect x="${padding.left}" y="${y}" width="${barWidth}" height="14" rx="7" class="mini-bar-track" />
-        <rect x="${padding.left}" y="${y}" width="${barLen}" height="14" rx="7" fill="${zoneStroke(zone.level)}" />
-        <text x="${padding.left + barLen + 8}" y="${y + 12}" class="mini-bar-value">${zone.incidentsCount}</text>
+        <text x="${padding.left - 14}" y="${y + barHeight / 2}" dominant-baseline="middle" text-anchor="end" class="mini-bar-label">${escapeHtml(zone.title)}</text>
+        <rect x="${padding.left}" y="${y}" width="${barWidth}" height="${barHeight}" rx="${barRadius}" class="mini-bar-track" />
+        <rect x="${padding.left}" y="${y}" width="${barLen}" height="${barHeight}" rx="${barRadius}" fill="${zoneStroke(zone.level)}" />
+        <text x="${width - padding.right + 12}" y="${y + barHeight / 2}" dominant-baseline="middle" class="mini-bar-value">${zone.incidentsCount}</text>
       `;
     })
     .join("");
 
   svg.innerHTML = `
-    <rect x="0" y="0" width="${width}" height="${height}" rx="20" class="chart-bg" />
+    <rect x="0" y="0" width="${width}" height="${height}" rx="24" class="chart-bg" />
     ${rows}
-    <text x="${width / 2}" y="${height - 10}" text-anchor="middle" class="chart-label">Incidents</text>
   `;
 }
 

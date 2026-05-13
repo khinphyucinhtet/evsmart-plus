@@ -339,54 +339,6 @@
             </div>
           </article>
 
-          <aside class="focused-region-panel">
-            <div class="focused-region-head">
-              <div>
-                <h3>Focused Region</h3>
-                <p>Selected hotspot details for response planning.</p>
-              </div>
-            </div>
-            <label class="focus-region-filter focus-region-filter-standalone">
-              <span>Region</span>
-              <select id="focusRegionSelect" aria-label="Focused region selector"></select>
-            </label>
-            <div class="focus-highlight focus-highlight-standalone">
-              <div class="focus-icon">AI</div>
-              <div class="focus-copy">
-                <div class="focus-copy-top">
-                  <h4 id="zoneTitle">Shah Alam</h4>
-                  <p id="zoneRiskText" class="zone-risk high-text">High alert zone</p>
-                </div>
-                <div class="focus-facts-grid focus-facts-grid-standalone">
-                  <div class="focus-fact">
-                    <span>Cases in Range</span>
-                    <strong id="zoneIncidents">14 incidents</strong>
-                  </div>
-                  <div class="focus-fact">
-                    <span>Critical Share</span>
-                    <strong id="zoneCritical">36% Level 4/5</strong>
-                  </div>
-                  <div class="focus-fact">
-                    <span>Peak Window</span>
-                    <strong id="zoneWindow">5 PM - 8 PM</strong>
-                  </div>
-                  <div class="focus-fact">
-                    <span>Potential Cause</span>
-                    <strong id="zoneCause">Evening traffic pressure and EV charging route congestion</strong>
-                  </div>
-                  <div class="focus-fact focus-fact-wide">
-                    <span>Recommended Action</span>
-                    <strong id="zoneAction">Pre-position 1 ambulance unit</strong>
-                  </div>
-                </div>
-                <p id="zoneNarrative">
-                  Frequent severe alerts are clustering around Shah Alam, so ambulance units
-                  should keep standby coverage closer to Persiaran Kayangan and nearby access roads.
-                </p>
-              </div>
-            </div>
-            <button id="viewDetailedReportBtn" class="focus-report-btn focus-report-btn-standalone" type="button">View Detailed Report</button>
-          </aside>
         </div>
 
         <div class="report-bottom-stack">
@@ -451,10 +403,10 @@
                   <div class="trend-panel-badge">2</div>
                   <div>
                     <h4>Most Affected Districts</h4>
-                    <p>Show top 5 districts by incident count.</p>
+                    <p>Show top 10 districts by incident count.</p>
                   </div>
                 </div>
-                <svg id="topRiskChart" class="top-risk-chart" viewBox="0 0 420 240" aria-label="Top five risk districts chart"></svg>
+                <svg id="topRiskChart" class="top-risk-chart" viewBox="0 0 460 520" aria-label="Top ten risk districts chart"></svg>
               </section>
               <section class="trend-panel trend-severity-panel">
                 <div class="trend-panel-head">
@@ -497,230 +449,163 @@
                 <svg id="weekdayTrendChart" class="weekday-trend-chart" viewBox="0 0 420 240" aria-label="Day of week trend chart"></svg>
               </section>
             </div>
-            <div class="report-action-bar trend-action-bar">
-              <button id="exportPdfBtn" class="report-action-btn primary" type="button">Export PDF</button>
-              <button id="generateBriefingBtn" class="report-action-btn" type="button">Generate Report</button>
+          </article>
+
+          <article class="report-summary-card focused-region-summary-card">
+            <div class="trend-head">
+              <div>
+                <h3>Selected Region Analysis</h3>
+                <p>Use the region dropdown to review the latest hotspot concentration, severity share, peak time, and operational focus for one district.</p>
+              </div>
+              <label class="focus-region-filter focus-region-filter-standalone">
+                <span>Region</span>
+                <select id="focusRegionSelect" aria-label="Focused region selector"></select>
+              </label>
+            </div>
+
+            <div class="region-analysis-shell">
+              <div class="region-analysis-hero">
+                <div class="region-analysis-icon">AI</div>
+                <div class="region-analysis-copy">
+                  <div class="focus-copy-top">
+                    <h4 id="zoneTitle">Shah Alam</h4>
+                    <p id="zoneRiskText" class="zone-risk high-text">High alert zone</p>
+                  </div>
+                  <p id="zoneNarrative" class="region-analysis-summary">
+                    Frequent severe alerts are clustering around Shah Alam, so ambulance units
+                    should keep standby coverage closer to Persiaran Kayangan and nearby access roads.
+                  </p>
+                </div>
+              </div>
+
+              <div class="focus-facts-grid region-analysis-grid">
+                <div class="focus-fact">
+                  <span>Cases in Range</span>
+                  <strong id="zoneIncidents">14 incidents</strong>
+                </div>
+                <div class="focus-fact">
+                  <span>Critical Share</span>
+                  <strong id="zoneCritical">36% Level 4/5</strong>
+                </div>
+                <div class="focus-fact">
+                  <span>Peak Window</span>
+                  <strong id="zoneWindow">5 PM - 8 PM</strong>
+                </div>
+                <div class="focus-fact">
+                  <span>Potential Cause</span>
+                  <strong id="zoneCause">Evening traffic pressure and EV charging route congestion</strong>
+                </div>
+                <div class="focus-fact focus-fact-wide">
+                  <span>Recommended Action</span>
+                  <strong id="zoneAction">Pre-position 1 ambulance unit</strong>
+                </div>
+              </div>
             </div>
           </article>
 
-          <article class="report-insights-card insights-full-card report-suggestions-shell">
+          <article class="report-insights-card insights-full-card ai-report-shell">
             <div class="insights-head">
               <div>
                 <h3>AI Report &amp; Suggestions</h3>
                 <p>Government-focused action suggestions based on hotspot, severity, peak-hour, and regional risk patterns.</p>
               </div>
-              <span class="report-preview-period">Report Period: <strong id="reportPreviewPeriod">Past 7 Days</strong></span>
             </div>
 
-            <div id="reportSuggestionTabs" class="suggestion-tabs" role="tablist" aria-label="AI report suggestion tabs">
-              <button class="suggestion-tab active" type="button" data-suggestion-tab="summary">Executive Summary</button>
-              <button class="suggestion-tab" type="button" data-suggestion-tab="risk">Risk Intelligence</button>
-              <button class="suggestion-tab" type="button" data-suggestion-tab="operations">Operational Plan</button>
-              <button class="suggestion-tab" type="button" data-suggestion-tab="resources">Resource Allocation</button>
-              <button class="suggestion-tab" type="button" data-suggestion-tab="future">Future Prediction</button>
-              <button class="suggestion-tab" type="button" data-suggestion-tab="policy">Policy &amp; Enhancement</button>
-            </div>
-
-            <div class="insights-toolbar insights-toolbar-compact">
-              <p id="strategicSummary" class="strategic-summary">Government-focused action suggestions based on hotspot, severity, peak-hour, and regional risk patterns.</p>
-              <span id="generateStatus" class="generate-status">Ready to generate</span>
-            </div>
-
-            <div id="strategicRecommendations" class="report-suggestions-grid">
-              <article id="reportFindingsCard" class="suggestion-card"></article>
-              <article id="reportCausesCard" class="suggestion-card"></article>
-              <article id="reportSolutionsCard" class="suggestion-card"></article>
-              <article id="reportResourcesCard" class="suggestion-card"></article>
-              <article id="reportPredictionCard" class="suggestion-card suggestion-card-danger"></article>
-            </div>
-
-            <div class="advanced-insights-strip">
-              <div class="advanced-insights-label">
-                <span class="advanced-insights-icon">AI</span>
-                <strong>Advanced Insights</strong>
+            <div class="ai-report-meta-grid">
+              <div class="preview-meta-item">
+                <span>Report Period</span>
+                <strong id="reportPreviewPeriod">Past 7 Days</strong>
               </div>
-              <div class="advanced-insights-grid">
+              <div class="preview-meta-item">
+                <span>Updated Time</span>
+                <strong id="reportPreviewTime">Awaiting generation</strong>
+              </div>
+              <div class="preview-meta-item">
+                <span>Selected Region</span>
+                <strong id="reportSelectedRegion">Shah Alam</strong>
+              </div>
+              <div class="preview-meta-item">
+                <span>Risk Level</span>
+                <strong id="reportRiskLevel">HIGH</strong>
+              </div>
+              <div class="preview-meta-item">
+                <span>Confidence</span>
+                <strong id="reportConfidence">94%</strong>
+              </div>
+            </div>
+
+            <div class="ai-report-actions">
+              <span id="generateStatus" class="generate-status">Ready to generate</span>
+              <button id="generateRegionReportBtn" class="report-action-btn primary" type="button">Generate Report</button>
+            </div>
+
+            <div id="aiReportPreviewEmpty" class="report-preview-placeholder">
+              Select a region in the section above, then click <strong>Generate Report</strong> to create a government-ready AI summary for that district.
+            </div>
+
+            <div id="aiReportPreviewCard" class="ai-report-preview hidden">
+              <div class="ai-report-preview-head">
+                <div>
+                  <div class="mini-kicker">Government AI Summary</div>
+                  <h4>Regional Response Briefing</h4>
+                </div>
+                <span class="report-preview-period">Selected Region: <strong id="reportPreviewRegionBadge">Shah Alam</strong></span>
+              </div>
+
+              <div class="ai-report-section-grid">
+                <section class="preview-block preview-block-wide">
+                  <span>Executive Summary</span>
+                  <p id="reportExecutiveSummary" class="preview-paragraph">Awaiting AI analysis.</p>
+                </section>
+                <section class="preview-block">
+                  <span>Potential Causes</span>
+                  <p id="reportPotentialCausesText" class="preview-paragraph">Awaiting AI analysis.</p>
+                </section>
+                <section class="preview-block">
+                  <span>Potential Solutions</span>
+                  <p id="reportPotentialSolutionsText" class="preview-paragraph">Awaiting AI analysis.</p>
+                </section>
+                <section class="preview-block">
+                  <span>Future Prediction: Next 24 Hours</span>
+                  <p id="reportPrediction24h" class="preview-paragraph">Awaiting AI analysis.</p>
+                </section>
+                <section class="preview-block">
+                  <span>Future Prediction: Next 7 Days</span>
+                  <p id="reportPrediction7d" class="preview-paragraph">Awaiting AI analysis.</p>
+                </section>
+                <section class="preview-block preview-block-wide">
+                  <span>Resource &amp; Response Plan</span>
+                  <p id="reportResponsePlanText" class="preview-paragraph">Awaiting AI analysis.</p>
+                </section>
+              </div>
+
+              <div class="advanced-insights-grid ai-insight-grid">
                 <div class="advanced-insight-item">
                   <span>Risk Trend</span>
-                  <strong>Increasing</strong>
-                  <small>+18% vs previous 7 days</small>
+                  <strong id="reportInsightRiskTrend">Rising</strong>
+                  <small id="reportInsightRiskTrendMeta">Awaiting AI analysis</small>
                 </div>
                 <div class="advanced-insight-item">
                   <span>Hotspot Movement</span>
-                  <strong>Stable</strong>
-                  <small>No significant change</small>
+                  <strong id="reportInsightHotspotMovement">Stable</strong>
+                  <small id="reportInsightHotspotMovementMeta">Awaiting AI analysis</small>
                 </div>
                 <div class="advanced-insight-item">
                   <span>Response Readiness</span>
-                  <strong>Good</strong>
-                  <small>Average response 12.4 min</small>
+                  <strong id="reportInsightResponseReadiness">Prepared</strong>
+                  <small id="reportInsightResponseReadinessMeta">Awaiting AI analysis</small>
                 </div>
                 <div class="advanced-insight-item">
                   <span>Enforcement Impact</span>
-                  <strong>Moderate</strong>
-                  <small>15% improvement</small>
+                  <strong id="reportInsightEnforcementImpact">Moderate</strong>
+                  <small id="reportInsightEnforcementImpactMeta">Awaiting AI analysis</small>
                 </div>
                 <div class="advanced-insight-item">
                   <span>Public Advisory Reach</span>
-                  <strong>High</strong>
-                  <small>82% coverage</small>
+                  <strong id="reportInsightPublicAdvisoryReach">High</strong>
+                  <small id="reportInsightPublicAdvisoryReachMeta">Awaiting AI analysis</small>
                 </div>
               </div>
-              <button id="viewFullAnalyticsBtn" class="advanced-insight-btn" type="button">View Full Analytics</button>
-            </div>
-
-            <div class="analysis-output-card suggestions-summary-card">
-              <div class="analysis-output-rail">
-                <div class="analysis-output-icon">AI</div>
-                <div id="strategicLoadingStream" class="analysis-loading-stream"></div>
-              </div>
-              <div class="analysis-output-copy">
-                <div class="mini-kicker">AI Response Summary</div>
-                <p class="strategic-summary strategic-summary-tight">Government-focused recommendation logic is generated from the selected hotspot, regional severity distribution, and current peak-hour risk concentration.</p>
-              </div>
-            </div>
-
-            <div class="report-preview-card report-preview-card-hidden">
-              <div class="report-preview-meta report-preview-meta-compact">
-                <div class="preview-meta-item">
-                  <span>Generated Time</span>
-                  <strong id="reportPreviewTime">Awaiting generation</strong>
-                </div>
-                <div class="preview-meta-item">
-                  <span>Dataset Scope</span>
-                  <strong id="reportDatasetScope">21 regions</strong>
-                </div>
-                <div class="preview-meta-item">
-                  <span>Data Points</span>
-                  <strong id="reportDataPoints">Awaiting generation</strong>
-                </div>
-              </div>
-              <div class="report-preview-grid">
-                <div class="preview-block">
-                  <span>Key Findings</span>
-                  <ul id="reportKeyFindings"></ul>
-                </div>
-                <div class="preview-block">
-                  <span>Main Causes</span>
-                  <ul id="reportPotentialCauses"></ul>
-                </div>
-                <div class="preview-block">
-                  <span>Recommended Actions</span>
-                  <ul id="reportRecommendedActions"></ul>
-                </div>
-                <div class="preview-block">
-                  <span>Resource Plan</span>
-                  <ul id="reportDeploymentPlan"></ul>
-                </div>
-                <div class="preview-block preview-block-wide">
-                  <span>Next 24 Hours Prediction</span>
-                  <p id="reportPrediction" class="preview-paragraph">Awaiting AI analysis</p>
-                </div>
-              </div>
-            </div>
-          </article>
-
-          <article class="report-insights-card sample-report-shell">
-            <div class="insights-head">
-              <div>
-                <h3>Sample Report (Report Builder &amp; Preview)</h3>
-                <p>Configure a region-specific reporting package and preview a government-ready EV accident report before export.</p>
-              </div>
-            </div>
-
-            <div class="sample-report-layout">
-              <aside class="sample-report-builder">
-                <div class="sample-builder-block">
-                  <span class="sample-builder-step">1. Select Region / State</span>
-                  <select id="sampleReportRegionSelect" class="sample-builder-select">
-                    <option value="all">All Selangor Regions</option>
-                    <option value="shah-alam">Shah Alam</option>
-                    <option value="klang">Klang</option>
-                    <option value="gombak">Gombak</option>
-                    <option value="petaling-jaya">Petaling Jaya</option>
-                    <option value="subang-jaya">Subang Jaya</option>
-                    <option value="rawang">Rawang</option>
-                    <option value="hulu-langat">Hulu Langat</option>
-                    <option value="kajang">Kajang</option>
-                    <option value="putrajaya">Putrajaya</option>
-                    <option value="sabak-bernam">Sabak Bernam</option>
-                  </select>
-                </div>
-
-                <div class="sample-builder-block">
-                  <span class="sample-builder-step">2. Select Date Range</span>
-                  <div class="sample-range-group" role="tablist" aria-label="Sample report date range">
-                    <button class="sample-range-btn active" type="button" data-sample-range="7">Past 7 Days</button>
-                    <button class="sample-range-btn" type="button" data-sample-range="30">Past 30 Days</button>
-                    <button class="sample-range-btn" type="button" data-sample-range="monthly">Monthly</button>
-                    <button class="sample-range-btn" type="button" data-sample-range="custom">Custom</button>
-                  </div>
-                  <div id="sampleDateDisplay" class="sample-date-display">04 May 2026 - 10 May 2026</div>
-                </div>
-
-                <div class="sample-builder-block">
-                  <span class="sample-builder-step">3. Data &amp; Content Options</span>
-                  <div class="sample-option-list">
-                    <label><input type="checkbox" class="sample-content-option" value="overview" checked /> Incident Overview &amp; Trends</label>
-                    <label><input type="checkbox" class="sample-content-option" value="impact" checked /> Impact Level Breakdown</label>
-                    <label><input type="checkbox" class="sample-content-option" value="temporal" checked /> Peak Hours &amp; Day Analysis</label>
-                    <label><input type="checkbox" class="sample-content-option" value="risk" checked /> Risk &amp; Severity Analysis</label>
-                    <label><input type="checkbox" class="sample-content-option" value="predictions" checked /> AI Predictions &amp; Recommendations</label>
-                    <label><input type="checkbox" class="sample-content-option" value="government" checked /> Government Suggestions</label>
-                    <label><input type="checkbox" class="sample-content-option" value="resource" checked /> Resource &amp; Response Plan</label>
-                  </div>
-                </div>
-
-                <div class="sample-builder-block">
-                  <span class="sample-builder-step">4. Report Format</span>
-                  <div class="sample-format-group" role="tablist" aria-label="Sample report format">
-                    <button class="sample-format-btn active" type="button" data-report-format="pdf">PDF Report</button>
-                    <button class="sample-format-btn" type="button" data-report-format="excel">Excel Data</button>
-                    <button class="sample-format-btn" type="button" data-report-format="powerpoint">PowerPoint</button>
-                  </div>
-                </div>
-
-                <button id="generateSampleReportBtn" class="generate-sample-report-btn" type="button">Generate Report</button>
-              </aside>
-
-              <section class="sample-report-preview-shell">
-                <div class="sample-preview-toolbar">
-                  <div class="preview-page-controls">
-                    <button id="previewPrevBtn" class="preview-nav-btn" type="button" aria-label="Previous report page">‹</button>
-                    <span id="previewPageIndicator" class="preview-page-indicator">Pages: 1 / 12</span>
-                    <button id="previewNextBtn" class="preview-nav-btn" type="button" aria-label="Next report page">›</button>
-                  </div>
-                  <div class="preview-zoom-controls">
-                    <button id="previewZoomOutBtn" class="preview-nav-btn" type="button" aria-label="Zoom out">-</button>
-                    <span id="previewZoomValue" class="preview-zoom-value">100%</span>
-                    <button id="previewZoomInBtn" class="preview-nav-btn" type="button" aria-label="Zoom in">+</button>
-                  </div>
-                  <div class="preview-toolbar-actions">
-                    <button id="previewDownloadPdfBtn" class="report-action-btn primary" type="button">Download PDF</button>
-                    <button id="previewPrintBtn" class="report-action-btn" type="button">Print Report</button>
-                  </div>
-                </div>
-
-                <div id="sampleReportPrintable" class="sample-report-printable">
-                  <div id="sampleReportPage" class="sample-report-page sample-report-scale-100"></div>
-                </div>
-              </section>
-
-              <aside class="sample-report-pages">
-                <div class="sample-pages-head">Sample Report Pages</div>
-                <div id="sampleReportPageList" class="sample-page-list"></div>
-                <div class="sample-report-includes">
-                  <strong>Report Includes</strong>
-                  <ul>
-                    <li>Detailed charts and analytics</li>
-                    <li>AI-powered risk predictions</li>
-                    <li>Strategic recommendations</li>
-                    <li>Government enhancement suggestions</li>
-                    <li>Resource allocation plan</li>
-                    <li>Actionable insights</li>
-                  </ul>
-                </div>
-              </aside>
             </div>
           </article>
         </div>
@@ -728,8 +613,7 @@
     </main>
 
     <footer class="app-footer">
-      <span>© 2026 EVSmart+. All rights reserved.</span>
-      <span>Contact: evsmartplus@gmail.com | +00 1234 567 890</span>
+      <span>© 2026 EVSmart+ Emergency Intelligence System</span>
     </footer>
 
     <div id="reportModalOverlay" class="report-modal-overlay" aria-hidden="true">
@@ -755,8 +639,6 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>
