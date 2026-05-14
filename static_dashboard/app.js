@@ -35,6 +35,7 @@ let activeInsightAudience = "government";
 let strategicInsightsReady = false;
 let strategicInsightsLoading = false;
 let strategicLoadingTimer = null;
+let activeSuggestionTab = "summary";
 let activeTrendRange = "7";
 let activeTrendRegion = "all";
 let aiReportPreviewState = {
@@ -71,6 +72,17 @@ const sampleReportPages = [
   "Action Plan & Timeline",
   "Appendices & Data Tables",
 ];
+const BROWSER_AI_MODULE_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers";
+const BROWSER_AI_MODEL_ID = "Xenova/flan-t5-small";
+const browserAiState = {
+  generator: null,
+  loadPromise: null,
+  ready: false,
+  loading: false,
+  rewriting: false,
+  lastError: null,
+  requestId: 0,
+};
 const reportZones = {
   "shah-alam": {
     title: "Shah Alam",
@@ -614,6 +626,7 @@ const els = {
   trendPeakDay: document.querySelector("#trendPeakDay"),
   trendPeakMeta: document.querySelector("#trendPeakMeta"),
   generateStatus: document.querySelector("#generateStatus"),
+  reportAiMode: document.querySelector("#reportAiMode"),
   generateRegionReportBtn: document.querySelector("#generateRegionReportBtn"),
   strategicAnalysisBtnText: document.querySelector("#strategicAnalysisBtnText"),
   reportBanner: document.querySelector("#reportBanner"),
@@ -692,6 +705,75 @@ const els = {
   previewPrintBtn: document.querySelector("#previewPrintBtn"),
 };
 
+function activeAiReportRegionKey() {
+  return activeTrendRegion !== "all" && reportZones[activeTrendRegion] ? activeTrendRegion : "all";
+}
+
+function aiReportContext(regionKey = activeAiReportRegionKey(), range = activeTrendRange) {
+  const zones = zonesForReportRegion(regionKey);
+  const rankedZones = zones.slice().sort(compareZonesByPriority);
+  const focusZone =
+    (regionKey !== "all" && reportZones[regionKey]) ||
+    rankedZones[0] ||
+    reportZones["shah-alam"];
+  const secondZone = rankedZones[1] || focusZone;
+  return {
+    regionKey,
+    zones,
+    rankedZones,
+    zoneCount: zones.length,
+    focusZone,
+    secondZone,
+    regionLabel:
+      regionKey === "all" ? `All ${zones.length} Selangor regions` : focusZone.title,
+    range,
+    rangeLabel: trendRangeLabel(range),
+    metrics: buildReportMetricProfile(regionKey, range),
+  };
+}
+
+function setGenerateStatus(message) {
+  if (els.generateStatus) {
+    els.generateStatus.textContent = message;
+  }
+}
+
+function syncReportAiModeStatus(message = "") {
+  if (!els.reportAiMode) {
+    return;
+  }
+  if (message) {
+    els.reportAiMode.textContent = message;
+    return;
+  }
+  if (browserAiState.rewriting) {
+    els.reportAiMode.textContent = "Browser AI rewriting current report...";
+    return;
+  }
+  if (browserAiState.loading) {
+    els.reportAiMode.textContent = "Loading browser AI model...";
+    return;
+  }
+  if (browserAiState.ready) {
+    els.reportAiMode.textContent = "Browser AI active • Transformers.js";
+    return;
+  }
+  if (browserAiState.lastError) {
+    els.reportAiMode.textContent = "Local dynamic fallback active";
+    return;
+  }
+  els.reportAiMode.textContent = "Browser AI optional • local fallback ready";
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    }),
+  ]);
+}
+
 document.querySelectorAll("[data-role]").forEach((button) => {
   button.addEventListener("click", () => {
     activeRole = normalizeRole(button.dataset.role);
@@ -754,6 +836,7 @@ document.querySelectorAll("[data-trend-range]").forEach((button) => {
     renderTrendChart();
     renderTrendMetrics(reportZones[activeZone] || reportZones["shah-alam"]);
     renderStrategicInsights();
+    renderAiReportShell();
   });
 });
 
@@ -764,6 +847,9 @@ els.generateBriefingBtn?.addEventListener("click", generateStrategicBriefing);
 els.generateRegionReportBtn?.addEventListener("click", generateRegionReport);
 els.trendRegionFilter?.addEventListener("change", () => {
   activeTrendRegion = els.trendRegionFilter.value || "all";
+  if (activeTrendRegion !== "all" && reportZones[activeTrendRegion]) {
+    activeZone = activeTrendRegion;
+  }
   renderReportZone();
 });
 els.focusRegionSelect?.addEventListener("change", () => {
@@ -771,6 +857,7 @@ els.focusRegionSelect?.addEventListener("change", () => {
   if (reportZones[selected]) {
     activeZone = selected;
     renderReportZone();
+    renderAiReportShell();
   }
 });
 document.querySelectorAll("[data-sample-range]").forEach((button) => {
@@ -1035,7 +1122,7 @@ function renderReportZone() {
   els.riskDistribution.innerHTML = riskDistributionMarkup();
   renderTrendMetrics(zone);
   renderRegionAnalysis(zone);
-  renderAiReportShell(zone);
+  renderAiReportShell();
   bindRegionChips();
   bindRiskCards();
   renderTrendChart();
@@ -1051,21 +1138,21 @@ function renderRegionAnalysis(zone) {
 }
 
 function markAiReportStale() {
-  const zone = reportZones[activeZone] || reportZones["shah-alam"];
-  const metrics = buildReportMetricProfile(activeZone, activeTrendRange);
+  const context = aiReportContext();
+  const { regionKey, regionLabel, focusZone, metrics } = context;
   const stillCurrent =
     aiReportPreviewState.visible &&
-    aiReportPreviewState.region === activeZone &&
+    aiReportPreviewState.region === regionKey &&
     aiReportPreviewState.range === activeTrendRange;
 
   if (els.reportPreviewPeriod) {
     els.reportPreviewPeriod.textContent = trendRangeLabel(activeTrendRange);
   }
   if (els.reportSelectedRegion) {
-    els.reportSelectedRegion.textContent = zone.title;
+    els.reportSelectedRegion.textContent = regionLabel;
   }
   if (els.reportPreviewRegionBadge) {
-    els.reportPreviewRegionBadge.textContent = zone.title;
+    els.reportPreviewRegionBadge.textContent = regionLabel;
   }
   if (els.reportRiskLevel) {
     els.reportRiskLevel.textContent = metrics.riskLevel;
@@ -1078,11 +1165,12 @@ function markAiReportStale() {
       ? formatDate(aiReportPreviewState.generatedAt)
       : "Awaiting generation";
   }
-  if (els.generateStatus) {
-    els.generateStatus.textContent = stillCurrent
-      ? `Generated for ${zone.title}`
-      : `Ready to generate for ${zone.title}`;
-  }
+  setGenerateStatus(
+    stillCurrent
+      ? `Generated for ${regionLabel}`
+      : `Ready to generate for ${regionLabel}`,
+  );
+  syncReportAiModeStatus();
   if (els.aiReportPreviewCard) {
     els.aiReportPreviewCard.classList.toggle("hidden", !stillCurrent);
   }
@@ -1091,29 +1179,24 @@ function markAiReportStale() {
   }
 }
 
-function renderAiReportShell(zone) {
-  if (
-    aiReportPreviewState.visible &&
-    aiReportPreviewState.region === activeZone &&
-    aiReportPreviewState.range === activeTrendRange
-  ) {
-    renderGeneratedAiReport(zone);
+function renderAiReportShell() {
+  if (aiReportPreviewState.visible) {
+    renderGeneratedAiReport(activeAiReportRegionKey(), { autoEnhance: browserAiState.ready });
     return;
   }
   markAiReportStale();
 }
 
 function generateRegionReport() {
-  const zone = reportZones[activeZone] || reportZones["shah-alam"];
+  const regionKey = activeAiReportRegionKey();
   aiReportPreviewState.visible = true;
-  aiReportPreviewState.region = activeZone;
+  aiReportPreviewState.region = regionKey;
   aiReportPreviewState.range = activeTrendRange;
   aiReportPreviewState.generatedAt = new Date();
-  renderGeneratedAiReport(zone);
+  renderGeneratedAiReport(regionKey, { autoEnhance: true, forceBrowserAi: true });
 }
 
-function renderGeneratedAiReport(zone) {
-  const profile = buildAiRegionReportProfile(activeZone, activeTrendRange);
+function applyAiReportProfile(profile) {
   if (els.reportPreviewPeriod) {
     els.reportPreviewPeriod.textContent = trendRangeLabel(activeTrendRange);
   }
@@ -1121,10 +1204,10 @@ function renderGeneratedAiReport(zone) {
     els.reportPreviewTime.textContent = formatDate(aiReportPreviewState.generatedAt || new Date());
   }
   if (els.reportSelectedRegion) {
-    els.reportSelectedRegion.textContent = zone.title;
+    els.reportSelectedRegion.textContent = profile.regionLabel;
   }
   if (els.reportPreviewRegionBadge) {
-    els.reportPreviewRegionBadge.textContent = zone.title;
+    els.reportPreviewRegionBadge.textContent = profile.regionLabel;
   }
   if (els.reportRiskLevel) {
     els.reportRiskLevel.textContent = profile.metrics.riskLevel;
@@ -1191,18 +1274,199 @@ function renderGeneratedAiReport(zone) {
   }
 }
 
-function buildAiRegionReportProfile(regionKey, range) {
-  const zone = reportZones[regionKey] || reportZones["shah-alam"];
-  const metrics = buildReportMetricProfile(regionKey, range);
-  const regionalDetail = regionOperationalProfile(zone, metrics);
+function renderGeneratedAiReport(regionKey = activeAiReportRegionKey(), { autoEnhance = false, forceBrowserAi = false } = {}) {
+  const profile = buildAiRegionReportProfile(regionKey, activeTrendRange);
+  aiReportPreviewState.visible = true;
+  aiReportPreviewState.region = regionKey;
+  aiReportPreviewState.range = activeTrendRange;
+  if (!aiReportPreviewState.generatedAt) {
+    aiReportPreviewState.generatedAt = new Date();
+  }
+  applyAiReportProfile(profile);
+  setGenerateStatus(`Dynamic draft ready for ${profile.regionLabel}`);
+  syncReportAiModeStatus();
+  if (autoEnhance || forceBrowserAi || browserAiState.ready) {
+    enhanceAiReportWithBrowserModel(regionKey, activeTrendRange, profile, {
+      forceLoad: forceBrowserAi,
+    });
+  }
+}
+
+async function ensureBrowserAiGenerator(forceLoad = false) {
+  if (browserAiState.generator) {
+    return browserAiState.generator;
+  }
+  if (browserAiState.loadPromise) {
+    return browserAiState.loadPromise;
+  }
+  if (!forceLoad && browserAiState.lastError) {
+    return null;
+  }
+
+  browserAiState.loading = true;
+  browserAiState.lastError = null;
+  syncReportAiModeStatus();
+
+  browserAiState.loadPromise = (async () => {
+    const { env, pipeline } = await import(BROWSER_AI_MODULE_URL);
+    env.allowLocalModels = false;
+    const primaryOptions = navigator.gpu ? { device: "webgpu", dtype: "q4" } : { dtype: "q4" };
+    try {
+      return await pipeline("text2text-generation", BROWSER_AI_MODEL_ID, primaryOptions);
+    } catch (_primaryError) {
+      return pipeline("text2text-generation", BROWSER_AI_MODEL_ID, { dtype: "q4" });
+    }
+  })()
+    .then((generator) => {
+      browserAiState.generator = generator;
+      browserAiState.ready = true;
+      return generator;
+    })
+    .catch((error) => {
+      browserAiState.ready = false;
+      browserAiState.lastError = error;
+      return null;
+    })
+    .finally(() => {
+      browserAiState.loading = false;
+      browserAiState.loadPromise = null;
+      syncReportAiModeStatus();
+    });
+
+  return browserAiState.loadPromise;
+}
+
+function buildBrowserAiPrompt(profile) {
+  return [
+    "Rewrite the EV accident dashboard briefing into exactly 6 concise lines.",
+    "Use this exact format and keep place names and numbers unchanged:",
+    "Executive Summary: ...",
+    "Potential Causes: ...",
+    "Potential Solutions: ...",
+    "Next 24 Hours: ...",
+    "Next 7 Days: ...",
+    "Response Plan: ...",
+    "No markdown. No bullets.",
+    `Scope: ${profile.regionLabel}`,
+    `Reporting Period: ${profile.rangeLabel}`,
+    `Top Hotspot: ${profile.focusZoneTitle}`,
+    `Risk Level: ${profile.metrics.riskLevel}`,
+    `Total Incidents: ${profile.metrics.totalIncidents}`,
+    `High Severity: ${profile.metrics.highSeverity}`,
+    `Critical Share: ${profile.metrics.criticalShare}%`,
+    `Peak Window: ${profile.metrics.peakPeriod}`,
+    `Draft Executive Summary: ${profile.executiveSummary}`,
+    `Draft Potential Causes: ${profile.potentialCauses}`,
+    `Draft Potential Solutions: ${profile.potentialSolutions}`,
+    `Draft Next 24 Hours: ${profile.next24Hours}`,
+    `Draft Next 7 Days: ${profile.next7Days}`,
+    `Draft Response Plan: ${profile.responsePlan}`,
+  ].join("\n");
+}
+
+function parseBrowserAiFields(outputText, fallbackProfile) {
+  const normalized = String(outputText || "").replace(/\r/g, "");
+  const extractLine = (label) => {
+    const match = normalized.match(new RegExp(`${label}:\\s*([^\\n]+)`, "i"));
+    return match?.[1]?.trim() || "";
+  };
   return {
+    executiveSummary: extractLine("Executive Summary") || fallbackProfile.executiveSummary,
+    potentialCauses: extractLine("Potential Causes") || fallbackProfile.potentialCauses,
+    potentialSolutions: extractLine("Potential Solutions") || fallbackProfile.potentialSolutions,
+    next24Hours: extractLine("Next 24 Hours") || fallbackProfile.next24Hours,
+    next7Days: extractLine("Next 7 Days") || fallbackProfile.next7Days,
+    responsePlan: extractLine("Response Plan") || fallbackProfile.responsePlan,
+  };
+}
+
+async function enhanceAiReportWithBrowserModel(regionKey, range, fallbackProfile, { forceLoad = false } = {}) {
+  const requestId = ++browserAiState.requestId;
+  browserAiState.rewriting = true;
+  syncReportAiModeStatus();
+  setGenerateStatus(`Refreshing ${fallbackProfile.regionLabel} with browser AI...`);
+
+  let generator = null;
+  try {
+    generator = await withTimeout(
+      ensureBrowserAiGenerator(forceLoad),
+      forceLoad ? 18000 : 9000,
+      "Browser AI model load",
+    );
+  } catch (error) {
+    browserAiState.lastError = error;
+  }
+  if (!generator) {
+    if (requestId === browserAiState.requestId) {
+      browserAiState.rewriting = false;
+      syncReportAiModeStatus();
+      setGenerateStatus(`Dynamic fallback ready for ${fallbackProfile.regionLabel}`);
+    }
+    return;
+  }
+
+  let generatedText = "";
+  try {
+    const result = await withTimeout(
+      generator(buildBrowserAiPrompt(fallbackProfile), {
+        max_new_tokens: 220,
+        do_sample: false,
+        temperature: 0.2,
+      }),
+      12000,
+      "Browser AI rewrite",
+    );
+    generatedText = Array.isArray(result)
+      ? result[0]?.generated_text || result[0]?.summary_text || ""
+      : result?.generated_text || result?.summary_text || "";
+  } catch (error) {
+    browserAiState.lastError = error;
+  }
+
+  if (requestId !== browserAiState.requestId) {
+    return;
+  }
+
+  browserAiState.rewriting = false;
+  if (!generatedText) {
+    syncReportAiModeStatus();
+    setGenerateStatus(`Dynamic fallback ready for ${fallbackProfile.regionLabel}`);
+    return;
+  }
+
+  const rewrittenFields = parseBrowserAiFields(generatedText, fallbackProfile);
+  aiReportPreviewState.generatedAt = new Date();
+  applyAiReportProfile({
+    ...fallbackProfile,
+    ...rewrittenFields,
+  });
+  syncReportAiModeStatus();
+  setGenerateStatus(`Browser AI updated ${formatTime(aiReportPreviewState.generatedAt)}`);
+}
+
+function buildAiRegionReportProfile(regionKey, range) {
+  const context = aiReportContext(regionKey, range);
+  const { focusZone: zone, metrics, regionLabel, zoneCount, secondZone, rangeLabel } = context;
+  const regionalDetail = regionOperationalProfile(zone, metrics);
+  const zoneScope =
+    regionKey === "all"
+      ? `${regionLabel}, with ${zone.title}${secondZone && secondZone.title !== zone.title ? ` and ${secondZone.title}` : ""} leading the highest-pressure cluster`
+      : zone.title;
+  const coverageLabel =
+    regionKey === "all"
+      ? `${zoneCount} regions in the selected statewide dataset`
+      : `${zone.title} in the selected district dataset`;
+  return {
+    regionLabel,
+    rangeLabel,
+    focusZoneTitle: zone.title,
     metrics,
     executiveSummary:
-      `${zone.title} is currently assessed as a ${riskLabel(zone.level).toLowerCase()}-risk district for the ${trendRangeLabel(range).toLowerCase()} reporting window, with ${metrics.totalIncidents} simulated incidents and ${zone.criticalPct}% of activity concentrated in Level 4 and Level 5 severity. The pressure remains strongest during ${zone.window}, which shows that commuter demand, access-road merging, and EV travel movement are driving the most sensitive response period for ${zone.title}. Overall, the pattern indicates ${regionalDetail.summaryPressure}.`,
+      `${zoneScope} is currently assessed as a ${riskLabel(zone.level).toLowerCase()}-risk focus area for the ${rangeLabel.toLowerCase()} reporting window, with ${metrics.totalIncidents} simulated incidents across ${coverageLabel} and ${metrics.criticalShare}% of activity concentrated in Level 4 and Level 5 severity. The pressure remains strongest during ${metrics.peakPeriod.toLowerCase()}, which shows that commuter demand, access-road merging, and EV travel movement are driving the most sensitive response period for ${zone.title}. Overall, the pattern indicates ${regionalDetail.summaryPressure}.`,
     potentialCauses:
       `${regionalDetail.causeLead} The current pattern also suggests ${regionalDetail.causeSupport}, especially when vehicle flow compresses around ${regionalDetail.corridorLabel} during ${zone.window.toLowerCase()}.`,
     potentialSolutions:
-      `${regionalDetail.solutionLead} A coordinated response should also keep temporary warning signage visible before ${zone.window}, strengthen traffic-flow control near active charging and connector routes, and maintain hospital readiness coordination whenever the critical-share pattern moves above ${zone.criticalPct} percent.`,
+      `${regionalDetail.solutionLead} A coordinated response should also keep temporary warning signage visible before ${zone.window}, strengthen traffic-flow control near active charging and connector routes, and maintain hospital readiness coordination whenever the critical-share pattern moves above ${metrics.criticalShare} percent.`,
     next24Hours:
       `${zone.title} is expected to remain ${zone.level === "high" ? "the primary watch zone" : zone.level === "medium" ? "under active monitoring" : "under lighter monitoring"} over the next 24 hours, with the highest likelihood of incident concentration returning during ${zone.window}. If congestion builds early, emergency teams should expect ${regionalDetail.prediction24h}.`,
     next7Days:
@@ -2640,7 +2904,7 @@ function renderTrendMetrics(zone) {
   }
   if (els.trendTotalIncidents) {
     els.trendTotalIncidents.textContent = totalIncidents;
-    els.trendTotalMeta.textContent = `${trendRangeLabel(activeTrendRange)} coverage across ${activeTrendRegion === "all" ? "21 regions" : zone.title}`;
+    els.trendTotalMeta.textContent = `${trendRangeLabel(activeTrendRange)} coverage across ${activeTrendRegion === "all" ? `${Object.keys(reportZones).length} regions` : zone.title}`;
     els.trendHighSeverity.textContent = highSeverity;
     els.trendHighMeta.textContent = `${Math.round((highSeverity / Math.max(1, totalIncidents)) * 100)}% of the selected dataset`;
     els.trendAvgDaily.textContent = avgDaily;
@@ -2996,8 +3260,16 @@ function strategicContentFor(zone) {
     .slice(0, 3)
     .map((item) => item.title);
   const calmLabel = calmZones.length ? calmZones.join(", ") : "routine lower-risk regions";
+  const leadPairLabel =
+    secondZone && secondZone.title !== leadZone.title
+      ? `${leadZone.title} and ${secondZone.title}`
+      : leadZone.title;
   return {
-    summary: `${leadZone.title} and ${secondZone.title} show the strongest Level 4 accident concentration. Evening 5 PM - 9 PM remains the main response window, while medium-risk areas need monitoring rather than full emergency deployment.`,
+    leadPairLabel,
+    leadZone,
+    secondZone,
+    calmLabel,
+    summary: `${leadPairLabel} show the strongest Level 4 accident concentration. ${zone.window} remains a key response window for the current selection, while medium-risk areas need monitoring rather than full emergency deployment.`,
     cards: [
       {
         title: "Key Findings",
@@ -3098,15 +3370,18 @@ function strategicCardsMarkup(cards) {
 
 function strategicInsightProfile(zone) {
   const content = strategicContentFor(zone);
-  const metrics = buildReportMetricProfile(activeTrendRegion === "all" ? "all" : activeZone, activeTrendRange, {
+  const context = aiReportContext(activeAiReportRegionKey(), activeTrendRange);
+  const metrics = buildReportMetricProfile(activeAiReportRegionKey(), activeTrendRange, {
     summaryMode: true,
   });
+  const regionLabel = context.regionLabel.toLowerCase();
+  const leadPairLabel = content.leadPairLabel;
   const configs = {
     summary: {
       summary:
         "Government-focused action suggestions based on hotspot, severity, peak-hour, and regional risk patterns.",
       executive:
-        "Shah Alam and Klang remain the strongest Level 4 clusters during evening peak hours. A focused standby and public advisory plan can reduce response pressure in the next reporting cycle.",
+        `${leadPairLabel} remain the strongest Level 4 clusters during ${metrics.peakPeriod.toLowerCase()}. A focused standby and public advisory plan can reduce response pressure across ${regionLabel} in the next reporting cycle.`,
       findings: content.findings,
       causes: content.causes,
       solutions: content.actions,
@@ -3117,7 +3392,7 @@ function strategicInsightProfile(zone) {
       summary:
         "Risk intelligence highlights the strongest pressure corridors, impact severity split, and likely escalation windows.",
       executive:
-        "High-risk density remains concentrated around Shah Alam and Klang, while medium-risk districts need monitoring rather than full emergency deployment.",
+        `High-risk density remains concentrated around ${leadPairLabel}, while medium-risk districts in ${regionLabel} need monitoring rather than full emergency deployment.`,
       findings: [
         "High-alert districts continue clustering around the western Selangor commuter belt.",
         "Critical severity remains most visible during the evening 5 PM - 9 PM window.",
@@ -3136,7 +3411,7 @@ function strategicInsightProfile(zone) {
       summary:
         "Operational planning focuses on ambulance standby, warnings, and route coverage for the next reporting cycle.",
       executive:
-        "Operations should focus on evening response readiness, corridor visibility, and keeping approach roads open near the highest-risk districts.",
+        `Operations should focus on response readiness during ${metrics.peakPeriod.toLowerCase()}, corridor visibility, and keeping approach roads open near ${leadPairLabel}.`,
       findings: content.findings,
       causes: content.causes,
       solutions: [
@@ -3151,7 +3426,7 @@ function strategicInsightProfile(zone) {
       summary:
         "Resource planning prioritizes ambulance standby, corridor access, and lighter patrol coverage for low-risk districts.",
       executive:
-        "Ambulance assets should stay near Shah Alam and Klang, while low-risk districts retain lighter routine patrol coverage.",
+        `Ambulance assets should stay near ${leadPairLabel}, while lower-risk districts such as ${content.calmLabel} retain lighter routine patrol coverage.`,
       findings: content.findings,
       causes: content.causes,
       solutions: content.actions,
@@ -3162,7 +3437,7 @@ function strategicInsightProfile(zone) {
       summary:
         "Future prediction uses severity share, peak-hour concentration, and hotspot stability to estimate the next 24 hours.",
       executive:
-        "If evening congestion continues, Shah Alam may remain the highest-risk night cluster while medium-risk districts absorb spillover pressure.",
+        `If current corridor pressure continues, ${content.leadZone.title} may remain the highest-risk cluster while medium-risk districts absorb spillover pressure across ${regionLabel}.`,
       findings: content.findings,
       causes: content.causes,
       solutions: content.actions,
@@ -3173,7 +3448,7 @@ function strategicInsightProfile(zone) {
       summary:
         "Policy suggestions focus on signage, public advisory reach, charging-route flow, and corridor-level prevention.",
       executive:
-        "Government enhancements should prioritize warning signage, public advisories, and charging-route traffic flow before evening rush hour.",
+        `Government enhancements should prioritize warning signage, public advisories, and charging-route traffic flow before ${metrics.peakPeriod.toLowerCase()}.`,
       findings: content.findings,
       causes: content.causes,
       solutions: [
@@ -3269,9 +3544,12 @@ function suggestionPredictionCardMarkup(profile) {
 }
 
 function renderStrategicInsights() {
-  const zone = reportZones[activeZone] || reportZones["shah-alam"];
+  if (!els.strategicSummary && !els.reportExecutiveCard && !els.reportPredictionCard) {
+    return;
+  }
+  const zone = aiReportContext().focusZone;
   const loadingLines = [
-    "Analyzing 21 regional accident patterns...",
+    `Analyzing ${Object.keys(reportZones).length} regional accident patterns...`,
     "Detecting severe impact clusters...",
     "Generating strategic response suggestions...",
   ];
@@ -3338,7 +3616,7 @@ function renderStrategicInsights() {
     metrics: profile.metrics,
   });
 
-  if (els.generateStatus) {
+  if (els.generateStatus && !els.aiReportPreviewCard) {
     els.generateStatus.textContent = strategicInsightsLoading
       ? "Analyzing..."
       : `Updated ${formatTime(reportGeneratedAt || new Date())}`;

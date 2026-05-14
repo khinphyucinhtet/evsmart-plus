@@ -12,7 +12,7 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=browser-ai-20260514b" />
     <style>
       .report-action-row {
         display: flex;
@@ -535,7 +535,10 @@
             </div>
 
             <div class="ai-report-actions">
-              <span id="generateStatus" class="generate-status">Ready to generate</span>
+              <div class="report-generate-stack">
+                <span id="generateStatus" class="generate-status">Ready to generate</span>
+                <span id="reportAiMode" class="generate-status ai-mode-status">Browser AI optional • local fallback ready</span>
+              </div>
               <button id="generateRegionReportBtn" class="report-action-btn primary" type="button">Generate Report</button>
             </div>
 
@@ -639,6 +642,6 @@
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""
     ></script>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=browser-ai-20260514b"></script>
   </body>
 </html>

@@ -1644,6 +1644,13 @@ body.report-mode .report-map-head {
   font-weight: 800;
 }
 
+.ai-mode-status {
+  background: #f4f8f5;
+  color: #476150;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .trend-top {
   display: flex;
   gap: 12px;
