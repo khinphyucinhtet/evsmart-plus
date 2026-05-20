@@ -69,10 +69,6 @@ class GlobalSearchHandler {
   static Future<void> handleSearch(BuildContext context, String key) async {
     key = key.toLowerCase().trim();
 
-    if (_handleFunKeywords(context, key)) {
-      return;
-    }
-
     if (_matchesAny(key, [
       'call ambulance',
       'find ambulance',
@@ -459,74 +455,6 @@ class GlobalSearchHandler {
       default:
         return false;
     }
-  }
-
-  static bool _handleFunKeywords(BuildContext context, String key) {
-    if (key.contains('bangla') ||
-        key.contains('bangladeshii') ||
-        key.contains('sorrow')) {
-      _showSimplePopup(context, 'STUPID', 'Zarul The Bangladeshii');
-      return true;
-    }
-
-    if (key.contains('ryan') || key.contains('ryan danish')) {
-      _showSimplePopup(context, 'STUPID', 'Ryan Bodoh');
-      return true;
-    }
-
-    if (key.contains('laku') ||
-        key.contains('indian') ||
-        key.contains('lakulesh')) {
-      _showSimplePopup(context, 'STUPID', 'Laku the Indian');
-      return true;
-    }
-
-    if (key.contains('arab') ||
-        key.contains('shihab') ||
-        key.contains('arab bombastic')) {
-      _showSimplePopup(
-        context,
-        'ARAB',
-        'YOU JUST GOT BOMBED !! \n ARAB BOMBASTICCC SIDE EYE',
-        gifUrl:
-            'https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExYmN4YnJseHlydnMzaHcweHdlaGw0Y2MydjY4aTZhNW1jNjhrYXVpNiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/LlyEb37tEgNYcGpKPg/giphy.gif',
-      );
-      return true;
-    }
-
-    return false;
-  }
-
-  static void _showSimplePopup(
-    BuildContext context,
-    String title,
-    String message, {
-    String? gifUrl,
-  }) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (gifUrl != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Image.network(gifUrl, height: 120, fit: BoxFit.cover),
-              ),
-            Text(message, textAlign: TextAlign.center),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
   }
 
   static Future<void> _showNearbyAmbulanceLookup(BuildContext context) async {
